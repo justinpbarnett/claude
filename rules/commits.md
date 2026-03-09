@@ -1,0 +1,4 @@
+- Never mention claude, ai, copilot, llm, or similar in commit messages
+- Use conventional commit format: feat:, fix:, refactor:, chore:, docs:, test:
+- One logical change per commit (atomic commits)
+- Subject line under 72 characters

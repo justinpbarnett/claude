@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Review Report",
+  "description": "Structured output from the review skill. Must be valid JSON parseable by JSON.parse().",
+  "type": "object",
+  "required": ["success", "review_summary", "issues_found", "issues_fixed", "review_issues", "screenshots"],
+  "properties": {
+    "success": {
+      "type": "boolean",
+      "description": "true if there are no unfixed blocker issues remaining, false if unfixed blockers exist"
+    },
+    "review_summary": {
+      "type": "string",
+      "description": "2-4 sentences describing what was reviewed, issues found, and what was fixed.",
+      "examples": [
+        "Reviewed auth implementation against specs/feat-user-auth.md. Found 2 issues: a missing auth check on /admin (blocker) and a hardcoded session timeout (tech_debt). Both were fixed in-place. All spec requirements are now met."
+      ]
+    },
+    "issues_found": {
+      "type": "integer",
+      "description": "Total number of issues discovered during review"
+    },
+    "issues_fixed": {
+      "type": "integer",
+      "description": "Number of issues that were successfully fixed"
+    },
+    "review_issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["review_issue_number", "issue_description", "issue_resolution", "issue_severity", "fixed"],
+        "properties": {
+          "review_issue_number": {
+            "type": "integer",
+            "description": "Sequential issue number starting from 1"
+          },
+          "screenshot_path": {
+            "type": "string",
+            "description": "Absolute path to a screenshot showing the issue. Only required for UI issues."
+          },
+          "issue_description": {
+            "type": "string",
+            "description": "Clear description of what the issue is and how it deviates from the spec"
+          },
+          "issue_resolution": {
+            "type": "string",
+            "description": "What was done to fix the issue, or recommended action if not fixed"
+          },
+          "issue_severity": {
+            "type": "string",
+            "enum": ["skippable", "tech_debt", "blocker"],
+            "description": "Impact classification per the severity guide"
+          },
+          "fixed": {
+            "type": "boolean",
+            "description": "true if the issue was fixed in-place, false if it remains (skippable issues are always false)"
+          },
+          "fix_note": {
+            "type": "string",
+            "description": "Optional note explaining why a blocker or tech_debt issue was not fixed, or details about the fix applied"
+          }
+        }
+      }
+    },
+    "screenshots": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "description": "Absolute path to a screenshot showcasing implemented functionality"
+      },
+      "description": "Always include screenshots when UI review was performed, regardless of success status"
+    }
+  }
+}

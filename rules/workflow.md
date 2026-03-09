@@ -1,0 +1,4 @@
+- Use `just` as task runner when a justfile exists; use `make` when a Makefile exists
+- When told to "think hard", use thorough analysis and consider edge cases
+- After implementing changes, run the build and fix any errors before reporting done
+- Run the project's validation suite before reporting implementation complete

@@ -1,0 +1,4 @@
+- Never use emdashes in user-facing content -- replace with dashes, commas, or periods
+- Don't add comments, docstrings, or type annotations to unchanged code
+- Prefer editing existing files over creating new ones
+- Write self-documenting code; avoid explanatory comments when naming is clear
