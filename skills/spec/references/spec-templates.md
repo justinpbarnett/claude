@@ -6,23 +6,22 @@ Use the template matching the task type. Replace every placeholder (wrapped in a
 
 ## Shared: Metadata Block
 
-All plans start with this metadata block:
+All specs start with this metadata block:
 
 ```md
 ## Metadata
 
 type: `{type}`
 task_id: `{task_id}`
-prompt: `{prompt}`
 ```
 
 ## Output Templates by Type
 
-Use the template that matches the `type` field in the task spec metadata. Every implementation spec starts with the metadata block carried forward from the task spec, then follows the type-specific structure below.
+Use the template that matches the `type` field in the metadata. Every spec starts with the metadata block, then follows the type-specific structure below.
 
 ---
 
-### `feat` — Feature Implementation
+### `feat` -- Feature Implementation
 
 ```md
 # Feature: <feature name>
@@ -30,18 +29,39 @@ Use the template that matches the `type` field in the task spec metadata. Every 
 ## Metadata
 
 type: `feat`
-task_id: `<from task spec>`
-prompt: `<from task spec>`
+task_id: `<task id or slug>`
+
+## Background
+
+<codebase context that informed the design -- relevant existing patterns, adjacent systems, technical constraints discovered during research. Makes the spec self-contained for an implementer who wasn't part of the exploration conversation.>
 
 ## Feature Description
 
-<synthesize the problem and desired outcome from the task spec into a clear feature description>
+<synthesize the problem and desired outcome into a clear feature description>
 
 ## User Story
 
 As a <type of user>
 I want to <action/goal>
 So that <benefit/value>
+
+## Scope
+
+### In Scope
+
+<what this feature covers -- be specific>
+
+### Out of Scope
+
+<what this feature explicitly does not cover -- prevents scope creep during implementation>
+
+## Acceptance Criteria
+
+<concrete, testable conditions that must be true for the feature to be considered complete>
+
+- [ ] <criterion>
+- [ ] <criterion>
+- [ ] <criterion>
 
 ## Relevant Files
 
@@ -51,19 +71,25 @@ So that <benefit/value>
 
 <list new files that need to be created with bullet points explaining their purpose>
 
+## Decisions
+
+<key architectural and technical decisions made during spec exploration, with brief rationale>
+
+| Decision | Choice | Rationale |
+| -------- | ------ | --------- |
+| <what was decided> | <what was chosen> | <why> |
+
 ## Implementation Plan
 
-### Phase 1: Foundation
+<break implementation into logical phases -- let the phases emerge from the feature's needs rather than forcing a fixed structure>
 
-<foundational work — schemas, migrations, base classes>
+### Phase 1: <phase name>
 
-### Phase 2: Core Implementation
+<description of work in this phase>
 
-<main feature logic>
+### Phase 2: <phase name>
 
-### Phase 3: Integration
-
-<wiring into existing functionality — routes, UI, events>
+<description of work in this phase>
 
 ## Step by Step Tasks
 
@@ -89,9 +115,11 @@ IMPORTANT: Execute every step in order, top to bottom.
 
 <edge cases derived from acceptance criteria and constraints>
 
-## Risk Assessment
+## Risks & Mitigations
 
-<what existing functionality could break, migration concerns, rollback strategy>
+| Risk | Impact | Mitigation |
+| ---- | ------ | ---------- |
+| <what could go wrong> | <severity and blast radius> | <how to prevent or recover> |
 
 ## Validation Commands
 
@@ -99,18 +127,14 @@ Run these commands to verify the implementation is complete.
 
 <project's actual check/lint/test commands to verify completion>
 
-## Open Questions (Unresolved)
+## Assumptions
 
-<questions from the task spec that could not be answered from the codebase — these require a human decision before implementation - include a recommended suggestion for each>
-
-## Sub-Tasks
-
-<if decomposition is needed, list sub-tasks in execution order with scope boundaries — otherwise write "Single task — no decomposition needed.">
+<decisions accepted during exploration that might be revisited, or items explicitly deferred to implementation time -- should be near-empty if exploration was thorough>
 ```
 
 ---
 
-### `fix` — Bug Fix
+### `fix` -- Bug Fix
 
 ```md
 # Fix: <bug name>
@@ -118,8 +142,11 @@ Run these commands to verify the implementation is complete.
 ## Metadata
 
 type: `fix`
-task_id: `<from task spec>`
-prompt: `<from task spec>`
+task_id: `<task id or slug>`
+
+## Background
+
+<codebase context relevant to the bug -- how the affected code path works, related systems, constraints discovered during research.>
 
 ## Bug Description
 
@@ -135,11 +162,19 @@ prompt: `<from task spec>`
 
 ## Root Cause Analysis
 
-<trace through the code path — identify the exact failure point with file paths and line numbers>
+<trace through the code path -- identify the exact failure point with file paths and line numbers>
 
 ## Relevant Files
 
 <list files relevant to the fix with bullet points explaining why>
+
+## Decisions
+
+<key decisions made about the fix approach, with brief rationale>
+
+| Decision | Choice | Rationale |
+| -------- | ------ | --------- |
+| <what was decided> | <what was chosen> | <why> |
 
 ## Fix Strategy
 
@@ -164,9 +199,11 @@ IMPORTANT: Execute every step in order, top to bottom.
 
 <existing tests that must still pass>
 
-## Risk Assessment
+## Risks & Mitigations
 
-<what could break, related areas of concern>
+| Risk | Impact | Mitigation |
+| ---- | ------ | ---------- |
+| <what could go wrong> | <severity and blast radius> | <how to prevent or recover> |
 
 ## Validation Commands
 
@@ -174,14 +211,14 @@ Run these commands to verify the implementation is complete.
 
 <project's actual check/lint/test commands>
 
-## Open Questions (Unresolved)
+## Assumptions
 
-<unresolved questions requiring human decision with a suggested recommendation>
+<decisions accepted during exploration that might be revisited -- should be near-empty if exploration was thorough>
 ```
 
 ---
 
-### `refactor` — Refactoring
+### `refactor` -- Refactoring
 
 ```md
 # Refactor: <refactor name>
@@ -189,16 +226,29 @@ Run these commands to verify the implementation is complete.
 ## Metadata
 
 type: `refactor`
-task_id: `<from task spec>`
-prompt: `<from task spec>`
+task_id: `<task id or slug>`
+
+## Background
+
+<codebase context that informed the refactor -- how the current code evolved, why it's structured this way, constraints discovered during research.>
 
 ## Refactor Description
 
 <what is being refactored and why the current approach is problematic>
 
+## Scope
+
+### In Scope
+
+<what this refactor covers>
+
+### Out of Scope
+
+<what this refactor explicitly does not touch>
+
 ## Current State
 
-<current code architecture, patterns, or structure — with file paths>
+<current code architecture, patterns, or structure -- with file paths>
 
 ## Target State
 
@@ -212,9 +262,17 @@ prompt: `<from task spec>`
 
 <new files if needed>
 
+## Decisions
+
+<key architectural decisions made during spec exploration, with brief rationale>
+
+| Decision | Choice | Rationale |
+| -------- | ------ | --------- |
+| <what was decided> | <what was chosen> | <why> |
+
 ## Migration Strategy
 
-<how to move from current to target state — backwards compatibility, incremental steps>
+<how to move from current to target state -- backwards compatibility, incremental steps>
 
 ## Step by Step Tasks
 
@@ -227,11 +285,13 @@ IMPORTANT: Execute every step in order, top to bottom.
 
 ## Testing Strategy
 
-<how to verify behavior is unchanged — existing tests that must pass, new tests for coverage gaps>
+<how to verify behavior is unchanged -- existing tests that must pass, new tests for coverage gaps>
 
-## Risk Assessment
+## Risks & Mitigations
 
-<what could break, deployment concerns>
+| Risk | Impact | Mitigation |
+| ---- | ------ | ---------- |
+| <what could go wrong> | <severity and blast radius> | <how to prevent or recover> |
 
 ## Validation Commands
 
@@ -239,18 +299,14 @@ Run these commands to verify the implementation is complete.
 
 <project's actual check/lint/test commands>
 
-## Open Questions (Unresolved)
+## Assumptions
 
-<unresolved questions requiring human decision with a suggested recommendation>
-
-## Sub-Tasks
-
-<decomposition if needed>
+<decisions accepted during exploration that might be revisited -- should be near-empty if exploration was thorough>
 ```
 
 ---
 
-### `perf` — Performance Optimization
+### `perf` -- Performance Optimization
 
 ```md
 # Perf: <optimization name>
@@ -258,8 +314,11 @@ Run these commands to verify the implementation is complete.
 ## Metadata
 
 type: `perf`
-task_id: `<from task spec>`
-prompt: `<from task spec>`
+task_id: `<task id or slug>`
+
+## Background
+
+<codebase context relevant to the performance issue -- how the affected code path works, current architecture, constraints discovered during research.>
 
 ## Performance Issue Description
 
@@ -279,6 +338,14 @@ prompt: `<from task spec>`
 
 <list files with bullet points explaining why>
 
+## Decisions
+
+<key optimization decisions made during spec exploration, with brief rationale>
+
+| Decision | Choice | Rationale |
+| -------- | ------ | --------- |
+| <what was decided> | <what was chosen> | <why> |
+
 ## Optimization Strategy
 
 <what changes will improve performance and why>
@@ -294,11 +361,13 @@ IMPORTANT: Execute every step in order, top to bottom.
 
 ## Benchmarking Plan
 
-<how to measure improvement — specific commands, tools, test scenarios>
+<how to measure improvement -- specific commands, tools, test scenarios>
 
-## Risk Assessment
+## Risks & Mitigations
 
-<tradeoffs — memory vs speed, complexity vs performance, what could regress>
+| Risk | Impact | Mitigation |
+| ---- | ------ | ---------- |
+| <what could go wrong> | <tradeoffs -- memory vs speed, complexity vs performance> | <how to prevent or recover> |
 
 ## Validation Commands
 
@@ -306,14 +375,14 @@ Run these commands to verify the implementation is complete.
 
 <project's actual check/lint/test commands>
 
-## Open Questions (Unresolved)
+## Assumptions
 
-<unresolved questions requiring human decision with a suggested recommendation>
+<decisions accepted during exploration that might be revisited -- should be near-empty if exploration was thorough>
 ```
 
 ---
 
-### `chore`, `docs`, `test`, `build`, `ci` — Lightweight Tasks
+### `chore`, `docs`, `test`, `build`, `ci` -- Lightweight Tasks
 
 ```md
 # <Type>: <task name>
@@ -321,12 +390,11 @@ Run these commands to verify the implementation is complete.
 ## Metadata
 
 type: `<type>`
-task_id: `<from task spec>`
-prompt: `<from task spec>`
+task_id: `<task id or slug>`
 
 ## Description
 
-<synthesize the task from the spec — what needs to happen and why>
+<synthesize the task -- what needs to happen and why>
 
 ## Relevant Files
 
