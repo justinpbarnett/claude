@@ -3,16 +3,7 @@
     "commit": "",
     "pr": ""
   },
-  "model": "sonnet",
-  "enabledPlugins": {
-    "github@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true,
-    "pyright-lsp@claude-plugins-official": true,
-    "gopls-lsp@claude-plugins-official": true
-  },
-  "skipDangerousModePermissionPrompt": true,
-  "effortLevel": "high",
+  "model": "haiku",
   "hooks": {
     "PreToolUse": [
       {
@@ -69,5 +60,14 @@
         ]
       }
     ]
-  }
+  },
+  "enabledPlugins": {
+    "github@claude-plugins-official": true,
+    "frontend-design@claude-plugins-official": true,
+    "typescript-lsp@claude-plugins-official": true,
+    "pyright-lsp@claude-plugins-official": true,
+    "gopls-lsp@claude-plugins-official": true
+  },
+  "skipDangerousModePermissionPrompt": true,
+  "effortLevel": "high"
 }
