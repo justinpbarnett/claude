@@ -25,7 +25,7 @@ Removes symlinks and restores backups if they exist.
 
 | Skill | Purpose |
 |-------|---------|
-| `pipeline` | End-to-end autonomous workflow: branch, implement, test, review, commit, PR |
+| `pipeline` | End-to-end autonomous workflow: branch, decompose, implement (parallel), test, review, commit, PR |
 | `setup` | Bootstraps a project's full config (CLAUDE.md, settings, memory, permissions) |
 | `spec` | Creates structured implementation specs by commit type |
 | `implement` | Executes specs with drift detection and agent delegation |
@@ -76,7 +76,7 @@ Removes symlinks and restores backups if they exist.
 The core development loop:
 
 ```
-prime -> spec -> branch -> implement -> test -> review -> simplify -> commit -> PR
+prime -> spec -> branch -> decompose -> implement (parallel) -> test -> review -> simplify -> commit -> PR
 ```
 
 The `/pipeline` skill chains this entire loop into a single command:
