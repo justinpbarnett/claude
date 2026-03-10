@@ -86,6 +86,8 @@ For each test case in the plan:
 1. Write a small test script that imports and calls the changed APIs
 2. Run it and check output
 
+**Test data management:** If a test requires database records (users, sessions, content, etc.), create them before the test and delete them after. Track every record inserted so cleanup is guaranteed even if a test fails. Prefer using the app's own APIs or CLI to create test data; fall back to direct DB queries if needed.
+
 Mark each checklist item as pass/fail as execution proceeds.
 
 ### Step 4: Fix Issues
@@ -154,6 +156,7 @@ Before returning the report:
 - JSON is valid and parseable
 - Failed tests sorted to top
 - Dev servers and background processes are stopped and cleaned up
+- All test data (DB records, uploaded files, temp accounts) has been removed -- the app state should match pre-test state
 - `execution_command` fields are reproducible from the project root
 
 ## Examples
