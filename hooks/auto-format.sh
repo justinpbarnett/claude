@@ -45,6 +45,18 @@ if [ -f "$PROJECT_ROOT/go.mod" ]; then
   exit 0
 fi
 
+# Python project
+if [ -f "$PROJECT_ROOT/pyproject.toml" ] || [ -f "$PROJECT_ROOT/setup.py" ]; then
+  case "$EXT" in
+    py)
+      if command -v ruff &>/dev/null; then
+        ruff format "$FILE_PATH" 2>/dev/null || true
+      fi
+      ;;
+  esac
+  exit 0
+fi
+
 # Node/Next.js project
 if [ -f "$PROJECT_ROOT/package.json" ]; then
   case "$EXT" in

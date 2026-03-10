@@ -53,6 +53,28 @@ if [ -f "$PROJECT_ROOT/go.mod" ] && [ "$EXT" = "go" ]; then
   fi
 fi
 
+# Python project: run ruff on the specific file if available
+if [ -f "$PROJECT_ROOT/pyproject.toml" ] || [ -f "$PROJECT_ROOT/setup.py" ]; then
+  case "$EXT" in
+    py)
+      if command -v ruff &>/dev/null; then
+        cd "$PROJECT_ROOT"
+        LINT_OUTPUT=$(ruff check --no-fix "$FILE_PATH" 2>&1) || true
+        if [ -n "$LINT_OUTPUT" ] && ! echo "$LINT_OUTPUT" | grep -q "All checks passed"; then
+          ERROR_LINES=$(echo "$LINT_OUTPUT" | head -10)
+          jq -n --arg output "$ERROR_LINES" --arg file "$FILE_PATH" '{
+            hookSpecificOutput: {
+              hookEventName: "PostToolUse",
+              additionalContext: ("ruff found issues after editing " + $file + ":\n" + $output)
+            }
+          }'
+          exit 0
+        fi
+      fi
+      ;;
+  esac
+fi
+
 # Node project: run eslint on the specific file if available
 if [ -f "$PROJECT_ROOT/package.json" ]; then
   case "$EXT" in
