@@ -15,6 +15,24 @@ description: >
   server (use the start skill).
 ---
 
+## Ground Rules
+
+**Test like a human. No shortcuts.**
+
+You are a human QA tester sitting at the keyboard. Run the exact same commands a user would type. Click the exact same buttons a user would click. Use the exact same config files, credentials, and data that already exist in the local environment.
+
+**NEVER create mocks, stubs, fakes, or test doubles.** No mock HTTP servers. No fake API responses. No stubbed services. No intercepted network calls. If the app talks to Jira, test against real Jira. If it reads from a database, use the real database. If it needs an API key, find the one already configured on this machine.
+
+**NEVER write test scripts, test harnesses, or wrapper programs** that import application code and call it programmatically. That is unit testing, not behavioral testing. The only exception is Playwright scripts for web UIs, because that is how you simulate a human using a browser.
+
+**Use real data from the local environment.** Before testing, discover what is already available:
+- Config files (check `~/.config/`, `~/.local/share/`, `.env`, project config dirs)
+- Credentials and API keys already stored on the machine
+- Existing databases, user accounts, and content
+- The app's own CLI or API to create any additional test data needed
+
+If credentials are missing or expired, report that as a finding -- do not work around it with fakes.
+
 ## Instructions
 
 ### Step 1: Analyze Changes and Detect App Type
@@ -54,23 +72,36 @@ Based on the change analysis, generate a checklist with two sections:
 
 Display the plan as a markdown checklist. Then immediately begin execution (no pause).
 
-### Step 3: Execute Test Plan
+### Step 3: Discover Local Environment
 
-For each test case in the plan:
+Before executing any tests, find the real config, credentials, and data already on this machine:
+
+1. Check for config files: `~/.config/<app>/`, `~/.local/share/<app>/`, `.env`, `.env.local`, project-local config dirs
+2. Check for credentials: API keys, tokens, auth files referenced by the app's config
+3. Check for databases: SQLite files, running Postgres/MySQL, Redis instances
+4. Check for running services the app depends on (use `ss -tlnp` or `systemctl`)
+5. Read the app's config-loading code to know exactly where it looks for settings
+
+Use what you find. If something is missing or expired, note it as a test finding.
+
+### Step 4: Execute Test Plan
+
+Run every test exactly as a human would -- same commands, same inputs, same environment. No mocks. No fakes. No programmatic shortcuts.
 
 **CLI apps:**
 1. Build the binary (e.g., `go build`, `cargo build`, `npm run build`)
-2. Run the command with real arguments
-3. Check exit code, stdout, stderr against expected behavior
-4. Test both success and error paths
+2. Run the exact command a user would type, with real arguments and real environment variables
+3. Pipe real input when the app reads from stdin
+4. Check exit code, stdout, stderr against expected behavior
+5. Test both success and error paths
 
 **Web apps:**
 1. Start the dev server in background (detect start command from justfile/package.json/Makefile)
 2. Wait for server to be ready (poll the URL)
-3. Use Playwright via a Node.js script to:
-   - Navigate to relevant pages
-   - Interact with UI elements (click, type, select)
-   - Assert visible content and behavior
+3. Use Playwright via a Node.js script to simulate a real user:
+   - Navigate to pages the same way a user would
+   - Click buttons, type into fields, select options
+   - Verify what appears on screen
    - Take screenshots on failure for debugging
 4. Stop the dev server when done
 5. If Playwright is not installed, run `npx playwright install chromium` first
@@ -78,19 +109,20 @@ For each test case in the plan:
 **API servers:**
 1. Start the server in background
 2. Wait for it to be ready
-3. Make real HTTP requests (curl or equivalent)
-4. Check response status, headers, body
-5. Stop the server when done
+3. Make real HTTP requests with curl -- the same requests a client would make
+4. Use real auth tokens from the local environment
+5. Check response status, headers, body
+6. Stop the server when done
 
 **Libraries:**
-1. Write a small test script that imports and calls the changed APIs
+1. Write a minimal script that calls the public API the same way a consumer would
 2. Run it and check output
 
-**Test data management:** If a test requires database records (users, sessions, content, etc.), create them before the test and delete them after. Track every record inserted so cleanup is guaranteed even if a test fails. Prefer using the app's own APIs or CLI to create test data; fall back to direct DB queries if needed.
+**Test data management:** If a test requires data (users, records, content), create it using the app's own CLI or API -- the same way a real user would. Track everything created so cleanup is guaranteed even if a test fails. Fall back to direct DB queries only if the app provides no other way.
 
 Mark each checklist item as pass/fail as execution proceeds.
 
-### Step 4: Fix Issues
+### Step 5: Fix Issues
 
 When a test case fails:
 1. Analyze the failure -- read error output, screenshots (for web), exit codes
@@ -103,7 +135,7 @@ When a test case fails:
 
 Prioritize fixing application bugs over fixing test infrastructure (Playwright scripts, build configs).
 
-### Step 5: Report
+### Step 6: Report
 
 Output a **human-readable summary** (scope, pass/fail/fixed counts, key issues), then a **JSON array** on its own line (valid for `JSON.parse()`):
 
@@ -139,8 +171,14 @@ Failed tests sorted to top. Fixed tests get `"fixed": true`.
 <If: no meaningful changes detected in git diff>
 <Then: if user provided a scope argument, use that. Otherwise, report that no changes were detected and ask the user what they want to test.>
 
+<If: app connects to external services (APIs, databases, SaaS)>
+<Then: find the real credentials and config already on this machine. Read the app's config-loading code to know where it looks. Use the real services. NEVER create mock servers, fake responses, or stub anything. If a credential is missing or expired, report it as a finding.>
+
+<If: you are tempted to create a mock, stub, fake server, or test harness>
+<Then: STOP. You are doing it wrong. Go back to Step 3 and find the real config. Test against real services. If a service is unreachable, report that as a finding -- do not fake it.>
+
 <If: app needs setup (seed data, auth, config files)>
-<Then: check for seed scripts, .env.example, setup documentation. Prepare the environment before testing.>
+<Then: check for seed scripts, .env.example, setup documentation. Prepare the environment before testing. Use the app's own CLI or API to create test data -- never insert data by writing code that imports app internals.>
 
 <If: test case is flaky (passes sometimes, fails sometimes)>
 <Then: run 3 times. Pass on 2/3, fail on 1/3 or fewer passes.>
