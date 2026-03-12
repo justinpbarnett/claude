@@ -89,17 +89,7 @@
         ]
       }
     ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/notify-user.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ]
+    "Notification": []
   },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
