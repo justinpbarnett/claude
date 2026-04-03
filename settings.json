@@ -3,12 +3,15 @@
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB": "1",
     "CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS": "15000",
-    "CLAUDE_CODE_NO_FLICKER": "1"
+    "CLAUDE_CODE_NO_FLICKER": "1",
+    "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1"
   },
+  "autoCompactWindow": 200000,
   "attribution": {
     "commit": "",
     "pr": ""
   },
+  "model": "opus",
   "enableAllProjectMcpServers": true,
   "hooks": {
     "PreToolUse": [
@@ -145,6 +148,5 @@
   },
   "effortLevel": "high",
   "voiceEnabled": true,
-  "skipDangerousModePermissionPrompt": true,
-  "model": "opus"
+  "skipDangerousModePermissionPrompt": true
 }
