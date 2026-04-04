@@ -53,18 +53,22 @@ if [ -z "$MSG" ]; then
   exit 0
 fi
 
+# Strip filename references before checking for forbidden words so that
+# commit messages that mention CLAUDE.md or AGENTS.md don't false-positive.
+MSG_CLEAN=$(echo "$MSG" | sed 's/CLAUDE\.md[^ ]*//gi; s/AGENTS\.md//gi')
+
 # Check for forbidden words (case-insensitive)
 # Match "claude", "copilot", "llm", "chatgpt", "openai", "anthropic" anywhere
 # Match "ai" only as a standalone word (not inside "repair", "maintain", etc.)
-if echo "$MSG" | grep -iqE '\b(claude|copilot|llm|chatgpt|openai|anthropic)\b' 2>/dev/null; then
+if echo "$MSG_CLEAN" | grep -iqE '\b(claude|copilot|llm|chatgpt|openai|anthropic)\b' 2>/dev/null; then
   echo "Commit message must not mention AI tools. Rephrase to describe what changed, not who changed it." >&2
   exit 2
 fi
-if echo "$MSG" | grep -iqE '\bai\b' 2>/dev/null; then
+if echo "$MSG_CLEAN" | grep -iqE '\bai\b' 2>/dev/null; then
   echo "Commit message must not mention AI. Rephrase to describe what changed, not who changed it." >&2
   exit 2
 fi
-if echo "$MSG" | grep -iqE '\bgpt-[0-9]' 2>/dev/null; then
+if echo "$MSG_CLEAN" | grep -iqE '\bgpt-[0-9]' 2>/dev/null; then
   echo "Commit message must not mention AI models. Rephrase to describe what changed, not who changed it." >&2
   exit 2
 fi
