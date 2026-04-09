@@ -6,4 +6,4 @@
 - After each change, run fast checks (build, lint, typecheck) and fix errors before continuing
 - Run the full test suite only once at the end, when all changes are complete
 - Don't add unnecessary comments, docstrings, or type annotations to unchanged code
-- **⚠️ SAFETY: NEVER execute `rm -rf *`, `rm -rf .*`, `rm -rf .git`, or any command with wildcards and recursive delete. These caused complete data loss on March 28, 2026. Use specific file paths only.**
+- **SAFETY: NEVER execute `rm -rf *`, `rm -rf .*`, `rm -rf .git`, or any command with wildcards and recursive delete. These caused complete data loss on March 28, 2026. Use specific file paths only.**

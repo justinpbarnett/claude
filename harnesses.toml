@@ -1,0 +1,80 @@
+# AI Coding Harness Configuration
+# Defines where each harness expects its config and how to map our unified repo.
+#
+# Source of truth: this repo (~/dev/ai)
+# Install: ./install.sh [harness|all]
+# Uninstall: ./uninstall.sh [harness|all]
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Claude Code
+# Docs: https://docs.anthropic.com/en/docs/claude-code
+# ─────────────────────────────────────────────────────────────────────────────
+[claude]
+target = "~/.claude"
+supports_hooks = true
+supports_plugins = true
+supports_rules = true
+guidelines_file = "CLAUDE.md"     # Claude reads CLAUDE.md, not AGENTS.md
+config_format = "json"            # settings.json
+
+[claude.symlinks]
+skills       = "skills"
+agents       = "agents"
+hooks        = "hooks"
+rules        = "rules"
+plugins      = "plugins"
+"CLAUDE.md"  = "AGENTS.md"       # Our shared AGENTS.md → their CLAUDE.md
+"settings.json" = "harness/claude/settings.json"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ForgeCode
+# Docs: https://forgecode.dev/docs/
+# ─────────────────────────────────────────────────────────────────────────────
+[forge]
+target = "~/forge"
+supports_hooks = false            # No hook system
+supports_plugins = false          # No plugin system
+supports_rules = false            # Rules go in AGENTS.md instead
+guidelines_file = "AGENTS.md"    # Forge reads AGENTS.md natively
+config_format = "toml"           # .forge.toml
+
+[forge.symlinks]
+skills      = "skills"
+agents      = "agents"            # Forge agent format differs (see agents/README.md)
+"AGENTS.md" = "AGENTS.md"
+".forge.toml" = "harness/forge/.forge.toml"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenCode
+# Docs: https://opencode.ai/docs/config
+# ─────────────────────────────────────────────────────────────────────────────
+[opencode]
+target = "~/.config/opencode"
+supports_hooks = false            # No hook system
+supports_plugins = true           # Has plugin support
+supports_rules = false            # Rules go in AGENTS.md
+guidelines_file = "AGENTS.md"    # OpenCode reads AGENTS.md natively (falls back to CLAUDE.md)
+config_format = "jsonc"           # opencode.json / opencode.jsonc
+
+[opencode.symlinks]
+skills      = "skills"
+agents      = "agents"
+commands    = "commands"          # OpenCode-specific slash commands
+"AGENTS.md" = "AGENTS.md"
+"opencode.json" = "harness/opencode/opencode.json"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Agent format compatibility notes
+# ─────────────────────────────────────────────────────────────────────────────
+# All three harnesses use markdown files with YAML frontmatter for agents.
+# However, the frontmatter keys differ:
+#
+#   Claude Code:  name, description, tools (comma-separated caps), model, maxTurns
+#   ForgeCode:    id, title, description, tools (list), model, provider, max_turns, temperature, ...
+#   OpenCode:     description, mode, model, tools (object), temperature, steps, ...
+#
+# Skills use identical SKILL.md format across all three. No conversion needed.
+#
+# The install script handles agent format differences by maintaining
+# harness-specific agent dirs in harness/<name>/agents/ when the shared
+# agents don't work as-is.

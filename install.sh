@@ -2,42 +2,157 @@
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-CLAUDE_DIR="$HOME/.claude"
 
-echo "Installing claude from $REPO_DIR"
-echo "Target: $CLAUDE_DIR"
-echo ""
+# ─────────────────────────────────────────────────────────────────────────────
+# Harness definitions
+# Each harness function declares: target dir, items to symlink (target=source)
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Ensure ~/.claude exists
-mkdir -p "$CLAUDE_DIR"
+install_claude() {
+    local target="$HOME/.claude"
+    echo "  Target: $target"
+    mkdir -p "$target"
 
-# Items to symlink
-ITEMS=(skills agents hooks rules plugins CLAUDE.md settings.json)
+    link "$REPO_DIR/skills"                       "$target/skills"
+    link "$REPO_DIR/agents"                       "$target/agents"
+    link "$REPO_DIR/hooks"                        "$target/hooks"
+    link "$REPO_DIR/rules"                        "$target/rules"
+    link "$REPO_DIR/plugins"                      "$target/plugins"
+    link "$REPO_DIR/AGENTS.md"                    "$target/CLAUDE.md"
+    link "$REPO_DIR/harness/claude/settings.json" "$target/settings.json"
+}
 
-for item in "${ITEMS[@]}"; do
-    target="$CLAUDE_DIR/$item"
-    source="$REPO_DIR/$item"
+install_forge() {
+    local target="$HOME/forge"
+    echo "  Target: $target"
+    mkdir -p "$target"
+
+    link "$REPO_DIR/skills"                     "$target/skills"
+    link "$REPO_DIR/agents"                     "$target/agents"
+    link "$REPO_DIR/AGENTS.md"                  "$target/AGENTS.md"
+    link "$REPO_DIR/harness/forge/.forge.toml"  "$target/.forge.toml"
+}
+
+install_opencode() {
+    local target="$HOME/.config/opencode"
+    echo "  Target: $target"
+    mkdir -p "$target"
+
+    link "$REPO_DIR/skills"                          "$target/skills"
+    link "$REPO_DIR/agents"                          "$target/agents"
+    link "$REPO_DIR/AGENTS.md"                       "$target/AGENTS.md"
+    link "$REPO_DIR/harness/opencode/opencode.json"  "$target/opencode.json"
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers
+# ─────────────────────────────────────────────────────────────────────────────
+
+link() {
+    local source="$1"
+    local target="$2"
+    local name
+    name="$(basename "$target")"
 
     if [ ! -e "$source" ]; then
-        echo "SKIP $item (not in repo)"
-        continue
+        echo "    SKIP $name (not in repo)"
+        return
     fi
 
-    # If target exists and is not a symlink, back it up
+    # Back up non-symlink targets
     if [ -e "$target" ] && [ ! -L "$target" ]; then
-        backup="$target.bak.$(date +%Y%m%d%H%M%S)"
-        echo "BACKUP $item -> $backup"
+        local backup="$target.bak.$(date +%Y%m%d%H%M%S)"
+        echo "    BACKUP $name -> $backup"
         mv "$target" "$backup"
     fi
 
-    # Remove existing symlink if present
+    # Remove existing symlink
     if [ -L "$target" ]; then
         rm "$target"
     fi
 
     ln -s "$source" "$target"
-    echo "LINK $item -> $source"
+    echo "    LINK $name -> $source"
+}
+
+usage() {
+    echo "Usage: $0 [harness|all]"
+    echo ""
+    echo "Harnesses:"
+    echo "  claude     Claude Code (~/.claude/)"
+    echo "  forge      ForgeCode   (~/forge/)"
+    echo "  opencode   OpenCode    (~/.config/opencode/)"
+    echo "  all        All harnesses"
+    echo ""
+    echo "Examples:"
+    echo "  $0 claude          # Install Claude Code only"
+    echo "  $0 forge opencode  # Install Forge and OpenCode"
+    echo "  $0 all             # Install all harnesses"
+    echo "  $0                 # Interactive: select harnesses"
+}
+
+ALL_HARNESSES=(claude forge opencode)
+
+select_interactive() {
+    echo "Which harnesses do you want to install?"
+    echo ""
+    for i in "${!ALL_HARNESSES[@]}"; do
+        echo "  $((i+1)). ${ALL_HARNESSES[$i]}"
+    done
+    echo "  a. All"
+    echo ""
+    read -rp "Choice (e.g. 1 3, or a for all): " choices
+
+    if [[ "$choices" == "a" || "$choices" == "all" ]]; then
+        SELECTED=("${ALL_HARNESSES[@]}")
+        return
+    fi
+
+    SELECTED=()
+    for choice in $choices; do
+        if [[ "$choice" =~ ^[0-9]+$ ]] && (( choice >= 1 && choice <= ${#ALL_HARNESSES[@]} )); then
+            SELECTED+=("${ALL_HARNESSES[$((choice-1))]}")
+        else
+            echo "Invalid choice: $choice"
+            exit 1
+        fi
+    done
+}
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Main
+# ─────────────────────────────────────────────────────────────────────────────
+
+echo "AI Coding Harness Installer"
+echo "Source: $REPO_DIR"
+echo ""
+
+SELECTED=()
+
+if [ $# -eq 0 ]; then
+    select_interactive
+elif [ "$1" = "all" ]; then
+    SELECTED=("${ALL_HARNESSES[@]}")
+elif [ "$1" = "-h" ] || [ "$1" = "--help" ]; then
+    usage
+    exit 0
+else
+    SELECTED=("$@")
+fi
+
+for harness in "${SELECTED[@]}"; do
+    case "$harness" in
+        claude|forge|opencode)
+            echo "Installing $harness..."
+            "install_$harness"
+            echo ""
+            ;;
+        *)
+            echo "Unknown harness: $harness"
+            usage
+            exit 1
+            ;;
+    esac
 done
 
-echo ""
-echo "Done. Restart Claude Code to pick up changes."
+echo "Done. Restart your coding harness(es) to pick up changes."
