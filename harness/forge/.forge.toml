@@ -28,6 +28,9 @@ max_tool_failure_per_turn = 3
 max_requests_per_turn = 100
 restricted = false
 tool_supported = true
+currency_symbol = ""
+currency_conversion_rate = 0.0
+verify_todos = true
 
 [retry]
 initial_backoff_ms = 200
@@ -62,11 +65,11 @@ keep_alive_while_idle = true
 accept_invalid_certs = false
 
 [session]
-provider_id = "claude_code"
-model_id = "claude-opus-4-6"
+provider_id = "spark"
+model_id = "qwen3-coder"
 
 [updates]
-frequency = "weekly"
+frequency = "daily"
 auto_update = true
 
 [compact]
@@ -80,3 +83,9 @@ on_turn_end = false
 [reasoning]
 effort = "high"
 enabled = true
+
+[[providers]]
+id = "spark"
+url = "http://192.168.0.110:8000/v1/chat/completions"
+models = "http://192.168.0.110:8000/v1/models"
+response_type = "OpenAI"
