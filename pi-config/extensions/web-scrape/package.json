@@ -1,0 +1,21 @@
+{
+  "name": "pi-web-scrape-extension",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "@mariozechner/pi-ai": "^0.66.1",
+    "@mariozechner/pi-coding-agent": "^0.66.1",
+    "@mozilla/readability": "^0.6.0",
+    "@sinclair/typebox": "^0.34.41",
+    "jsdom": "^26.1.0",
+    "playwright-core": "^1.53.2",
+    "turndown": "^7.2.0",
+    "turndown-plugin-gfm": "^1.0.2"
+  }
+}

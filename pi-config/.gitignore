@@ -1,0 +1,9 @@
+auth.json
+sessions/
+git/
+bin/
+pi-debug.log
+extensions/*/.env
+extensions/*/node_modules/
+extensions/*/.npm/
+.DS_Store

@@ -1,0 +1,21 @@
+{
+  "enabled": true,
+  "showStatus": true,
+  "showWidget": "warn",
+  "warnPct": 0.65,
+  "compactPct": 0.78,
+  "hardPct": 0.85,
+  "fallbackWarnTokens": 60000,
+  "fallbackCompactTokens": 90000,
+  "fallbackHardTokens": 110000,
+  "minTurnsBetweenCompactions": 2,
+  "minMsBetweenCompactions": 90000,
+  "trendTurns": 4,
+  "autoLabelLimit": 10,
+  "defaultProfile": "coding",
+  "summaryMaxTokens": 6000,
+  "gitSnapshots": {
+    "enabled": false,
+    "mode": "risky-turns"
+  }
+}
