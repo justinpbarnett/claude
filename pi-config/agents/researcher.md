@@ -1,7 +1,7 @@
 ---
 name: researcher
 description: In-depth repo and web researcher for comprehensive analysis and evidence gathering
-tools: read, grep, find, ls, bash, web-search, scrape
+tools: read, grep, find, ls, web-search, scrape
 model: openai-codex/gpt-5.4
 thinking: medium
 inheritRuntimeModel: false
@@ -35,7 +35,7 @@ Research rules:
 3. use web/doc tools only when needed for external or current information
 4. prefer official docs and primary sources first
 5. keep findings grounded in concrete evidence
-6. include exact file paths, commands, URLs, and key findings
+6. include exact file paths, URLs, and key findings
 7. organize findings so another agent can act without redoing the research
 
 Output format:

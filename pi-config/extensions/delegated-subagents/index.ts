@@ -1,144 +1,139 @@
-/**
- * Subagent Tool - Delegate tasks to specialized agents
- *
- * Spawns a separate `pi` process for each subagent invocation,
- * giving it an isolated context window.
- *
- * Supports three modes:
- *   - Single: { agent: "name", task: "..." }
- *   - Parallel: { tasks: [{ agent: "name", task: "..." }, ...] }
- *   - Chain: { chain: [{ agent: "name", task: "... {previous} ..." }, ...] }
- *
- * Uses JSON mode to capture structured output from subagents.
- */
-
 import { spawn } from "node:child_process";
-import * as fs from "node:fs";
-import * as os from "node:os";
-import * as path from "node:path";
-import type { AgentToolResult } from "@mariozechner/pi-agent-core";
-import type { Message } from "@mariozechner/pi-ai";
-import { StringEnum } from "@mariozechner/pi-ai";
-import { type ExtensionAPI, getMarkdownTheme, withFileMutationQueue } from "@mariozechner/pi-coding-agent";
-import { Container, Markdown, Spacer, Text } from "@mariozechner/pi-tui";
+import { promises as fsp } from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import { Text } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
-import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.js";
 
 const WORKER_BYPASS_ENV = "PI_SUBAGENT_WORKER";
 const SESSION_BYPASS_ENV = "PI_SUBAGENT_DISABLE";
-const MAX_PARALLEL_TASKS = 8;
-const MAX_CONCURRENCY = 4;
-const COLLAPSED_ITEM_COUNT = 10;
-const HARD_MAX_TURNS = 64;
-const HARD_MAX_TOOL_CALLS = 128;
-const HARD_MAX_DURATION_SECONDS = 1800;
+const STATUS_ID = "delegated-subagents";
+const AGENTS_DIR = path.join(process.env.PI_CODING_AGENT_DIR?.trim() || path.join(os.homedir(), ".pi", "agent"), "agents");
 
-type AgentLimits = {
-	maxTurns: number;
-	maxToolCalls: number;
-	maxDurationSeconds: number;
+const WORKER_TOOLS = ["read", "bash", "edit", "write", "grep", "find", "ls"];
+const MAX_PARALLEL = 4;
+const HARD_MAX_PARALLEL = 8;
+const WORKER_TIMEOUT_MS = 15 * 60 * 1000;
+
+type WorkerTask = {
+	label?: string;
+	worker: string;
+	task: string;
+	cwd?: string;
 };
 
-const DEFAULT_AGENT_LIMITS: Record<string, AgentLimits> = {
-	scout: { maxTurns: 8, maxToolCalls: 14, maxDurationSeconds: 180 },
-	planner: { maxTurns: 10, maxToolCalls: 14, maxDurationSeconds: 180 },
-	researcher: { maxTurns: 18, maxToolCalls: 40, maxDurationSeconds: 600 },
-	verifier: { maxTurns: 16, maxToolCalls: 24, maxDurationSeconds: 600 },
-	reviewer: { maxTurns: 10, maxToolCalls: 14, maxDurationSeconds: 180 },
-	worker: { maxTurns: 20, maxToolCalls: 32, maxDurationSeconds: 600 },
+type WorkerSpec = {
+	name: string;
+	description: string;
+	tools: string[];
+	model?: string;
+	thinking?: string;
+	systemPrompt: string;
 };
 
-const FALLBACK_AGENT_LIMITS: AgentLimits = { maxTurns: 12, maxToolCalls: 16, maxDurationSeconds: 180 };
+type WorkerResult = {
+	label: string;
+	worker: string;
+	task: string;
+	cwd: string;
+	exitCode: number;
+	output: string;
+	error?: string;
+	durationMs: number;
+};
+
+type ToolDetails = {
+	mode: "single" | "parallel";
+	results: WorkerResult[];
+};
+
+const TaskSchema = Type.Object({
+	label: Type.Optional(Type.String({ description: "Optional short label for this worker." })),
+	worker: Type.String({ description: "Worker name from the global roster, such as scout, planner, researcher, worker, reviewer, or verifier." }),
+	task: Type.String({ description: "Concrete objective for the worker." }),
+	cwd: Type.Optional(Type.String({ description: "Optional working directory for the worker." })),
+});
+
+const ParamsSchema = Type.Object({
+	label: Type.Optional(Type.String({ description: "Optional short label for the single worker." })),
+	worker: Type.Optional(Type.String({ description: "Worker name from the global roster." })),
+	task: Type.Optional(Type.String({ description: "Objective for one worker." })),
+	tasks: Type.Optional(
+		Type.Array(TaskSchema, {
+			description: `Parallel worker objectives. Max ${HARD_MAX_PARALLEL}.`,
+		}),
+	),
+	cwd: Type.Optional(Type.String({ description: "Optional working directory for the single worker." })),
+});
+
+function buildControllerPrompt(roster: WorkerSpec[]) {
+	const lines = [
+		"You are the user-facing orchestrator.",
+		"You do not inspect files, run commands, edit code, browse docs, or verify behavior yourself.",
+		"You talk to the user, decide what work is needed, delegate that work to workers, and synthesize the results.",
+		"Use the subagent tool for all substantive work.",
+		"Keep worker objectives narrow and concrete.",
+		"Use multiple workers only for genuinely independent tasks.",
+		"",
+		"Single-worker tool shape:",
+		'{ "worker": "planner", "task": "..." }',
+		"",
+		"Parallel tool shape:",
+		'{ "tasks": [{ "worker": "scout", "task": "..." }, { "worker": "reviewer", "task": "..." }] }',
+		"",
+		"Available workers:",
+	];
+	for (const worker of roster) {
+		lines.push(`- ${worker.name}: ${worker.description}`);
+	}
+	return lines.join("\n");
+}
+
+function buildWorkerPrompt(worker: WorkerSpec, cwd: string) {
+	return [
+		"You are a delegated worker.",
+		"You are not the user-facing orchestrator.",
+		`Assigned role: ${worker.name}`,
+		`Role description: ${worker.description}`,
+		"Execute the assigned task directly with the available tools.",
+		"Stay inside the requested scope.",
+		`Default working directory boundary: ${cwd}`,
+		"Do not inspect or modify files outside that boundary unless the task explicitly requires it.",
+		"If blocked, say exactly what blocked you.",
+		"Finish with a concise final report.",
+		"",
+		worker.systemPrompt,
+	].join("\n");
+}
 
 function getCurrentModelArg(ctx: any): string | undefined {
 	return ctx.model?.provider && ctx.model?.id ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
 }
 
-function buildDelegationInstructions() {
-	return [
-		"Delegated execution mode is active.",
-		"You are the main conversational/orchestrator agent.",
-		"Do not claim to have personally read files, run commands, edited code, searched the web, or executed verification.",
-		"For any repo work, shell work, code changes, web/doc research, testing, or verification, use the subagent tool.",
-		"Prefer self-contained delegated tasks, but keep them single-purpose and bounded.",
-		"Break broad requests into a few atomic subagent tasks when diagnosis, research, implementation, and verification are separable.",
-		"Use roles intentionally:",
-		"- scout: always cheap and quick for fast repo reconnaissance only",
-		"- planner: implementation planning only",
-		"- researcher: repo-first deep analysis, with web/docs only when needed",
-		"- worker: general implementation and execution",
-		"- verifier: spec-based, user-like validation with proof",
-		"- reviewer: read-only review and risk assessment",
-		"For simple repo-summary questions, do one scout pass first.",
-		"Do not run overlapping scout tasks for the same summary question.",
-		"Do not use scout for debugging, fixing errors, config/settings issues, or multi-step investigations.",
-		"If the task is deep, exhaustive, multi-phase, or needs external docs/current info, use researcher instead of scout.",
-		"Researcher should start from local repo evidence and use web tools only when local evidence is insufficient or current/external docs are required.",
-		"Every subagent call has turn, tool-call, and time budgets. If a task is obviously larger than the role default, set a larger explicit budget once up front instead of relaunching the same task repeatedly.",
-		"Do not use repeated escalation ladders for the same unchanged task; either decompose it or pick the correct role and budget once.",
-		"Use parallel tasks when independent work can happen concurrently.",
-		"Use chain mode when one agent's output should feed the next.",
-		"After subagents return, synthesize their findings for the user and decide next steps.",
-	].join("\n");
-}
-
-function assertPositiveInt(name: string, value: number, hardMax: number) {
-	if (!Number.isInteger(value) || value <= 0) {
-		throw new Error(`${name} must be a positive integer`);
-	}
-	if (value > hardMax) {
-		throw new Error(`${name} exceeds hard limit ${hardMax}`);
-	}
-}
-
-function resolveAgentLimits(agentName: string, overrides?: Partial<AgentLimits>): AgentLimits {
-	const defaults = DEFAULT_AGENT_LIMITS[agentName] || FALLBACK_AGENT_LIMITS;
-	const limits = {
-		maxTurns: overrides?.maxTurns ?? defaults.maxTurns,
-		maxToolCalls: overrides?.maxToolCalls ?? defaults.maxToolCalls,
-		maxDurationSeconds: overrides?.maxDurationSeconds ?? defaults.maxDurationSeconds,
+function getPiInvocation() {
+	return {
+		command: process.env.PI_SUBAGENT_PI_BIN || process.env.PI_BIN || "pi",
+		args: [] as string[],
 	};
-	assertPositiveInt("maxTurns", limits.maxTurns, HARD_MAX_TURNS);
-	assertPositiveInt("maxToolCalls", limits.maxToolCalls, HARD_MAX_TOOL_CALLS);
-	assertPositiveInt("maxDurationSeconds", limits.maxDurationSeconds, HARD_MAX_DURATION_SECONDS);
-	return limits;
 }
 
-function formatTokens(count: number): string {
-	if (count < 1000) return count.toString();
-	if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-	if (count < 1000000) return `${Math.round(count / 1000)}k`;
-	return `${(count / 1000000).toFixed(1)}M`;
+function extractAssistantText(message: any): string {
+	if (!message || !Array.isArray(message.content)) return "";
+	return message.content
+		.filter((part: any) => part?.type === "text" && typeof part.text === "string")
+		.map((part: any) => part.text)
+		.join("\n")
+		.trim();
 }
 
-function formatUsageStats(
-	usage: {
-		input: number;
-		output: number;
-		cacheRead: number;
-		cacheWrite: number;
-		cost: number;
-		contextTokens?: number;
-		turns?: number;
-	},
-	model?: string,
-): string {
-	const parts: string[] = [];
-	if (usage.turns) parts.push(`${usage.turns} turn${usage.turns > 1 ? "s" : ""}`);
-	if (usage.input) parts.push(`↑${formatTokens(usage.input)}`);
-	if (usage.output) parts.push(`↓${formatTokens(usage.output)}`);
-	if (usage.cacheRead) parts.push(`R${formatTokens(usage.cacheRead)}`);
-	if (usage.cacheWrite) parts.push(`W${formatTokens(usage.cacheWrite)}`);
-	if (usage.cost) parts.push(`$${usage.cost.toFixed(4)}`);
-	if (usage.contextTokens && usage.contextTokens > 0) {
-		parts.push(`ctx:${formatTokens(usage.contextTokens)}`);
-	}
-	if (model) parts.push(model);
-	return parts.join(" ");
+function preview(text: string, max = 120): string {
+	const singleLine = text.replace(/\s+/g, " ").trim();
+	if (!singleLine) return "(no output)";
+	return singleLine.length > max ? `${singleLine.slice(0, max)}...` : singleLine;
 }
 
-function formatDurationMs(durationMs: number | undefined): string {
-	if (!durationMs || durationMs <= 0) return "0s";
+function formatDuration(durationMs: number): string {
 	const totalSeconds = Math.max(1, Math.round(durationMs / 1000));
 	if (totalSeconds < 60) return `${totalSeconds}s`;
 	const minutes = Math.floor(totalSeconds / 60);
@@ -146,183 +141,105 @@ function formatDurationMs(durationMs: number | undefined): string {
 	return seconds === 0 ? `${minutes}m` : `${minutes}m${seconds}s`;
 }
 
-function formatLimitStats(result: {
-	turnsUsed: number;
-	maxTurns: number;
-	toolCallsUsed: number;
-	maxToolCalls: number;
-	durationMs: number;
-	maxDurationSeconds: number;
-}): string {
-	return `turns:${result.turnsUsed}/${result.maxTurns} tools:${result.toolCallsUsed}/${result.maxToolCalls} time:${formatDurationMs(result.durationMs)}/${result.maxDurationSeconds}s`;
+function formatStatusSummary(results: WorkerResult[]): string {
+	if (results.length === 0) return "orch ready";
+	const total = results.length;
+	const running = results.filter((result) => result.exitCode === -1).length;
+	const failed = results.filter((result) => result.exitCode > 0).length;
+	const succeeded = results.filter((result) => result.exitCode === 0).length;
+	if (running > 0) return `orch ${running}/${total} running`;
+	if (failed > 0) return `orch ${succeeded}/${total} ok ${failed} err`;
+	return total === 1 ? "orch worker ok" : `orch ${total}/${total} ok`;
 }
 
-function looksLikeDeepAnalysisTask(task: string): boolean {
-	return /\b(in[ -]?depth|deep|exhaustive|comprehensive|full architecture|full analysis|trace all|thorough|detailed analysis|broad investigation|multi-phase)\b/i.test(
-		task,
-	);
+function setOrchestratorStatus(ctx: any, results: WorkerResult[] = []) {
+	if (!ctx.hasUI) return;
+	ctx.ui.setStatus(STATUS_ID, formatStatusSummary(results));
 }
 
-function looksLikeDebugOrExecutionTask(task: string): boolean {
-	return (
-		/\b(fix|debug|diagnos(?:e|is|ing)|investigat(?:e|ion)|troubleshoot|root cause|repro(?:duce|duction)?)\b/i.test(task) ||
-		/\b(error|failure|failing|broken|bug|regression|stack trace|exception)\b/i.test(task) ||
-		(/\b(config|settings)\b/i.test(task) && /\b(problem|issue|fix|error|broken|failing)\b/i.test(task))
-	);
+function renderWorkerStatusToken(theme: any, result: WorkerResult) {
+	if (result.exitCode === -1) return theme.fg("warning", "RUN");
+	if (result.exitCode === 0) return theme.fg("success", "OK");
+	return theme.fg("error", "ERR");
 }
 
-function looksLikeBroadRepoOverviewTask(task: string): boolean {
-	return /\b(repo|repository|project|codebase)\b/i.test(task) && /\b(overview|summary|what is|what does it do|main components|layout|tour|high-level)\b/i.test(task);
+function renderWorkerSummary(theme: any, result: WorkerResult): string {
+	const cwdLabel = path.basename(result.cwd) || result.cwd;
+	return [
+		`${renderWorkerStatusToken(theme, result)} ${theme.fg("accent", result.label)}`,
+		result.label !== result.worker ? theme.fg("muted", `(${result.worker})`) : "",
+		theme.fg("border", "│"),
+		theme.fg("muted", cwdLabel),
+		theme.fg("border", "│"),
+		theme.fg("dim", formatDuration(result.durationMs)),
+	].filter(Boolean).join(" ");
 }
 
-function normalizeTaskWords(task: string): string[] {
-	return task
-		.toLowerCase()
-		.replace(/[^a-z0-9\s]+/g, " ")
-		.split(/\s+/)
-		.filter((word) => word.length >= 4)
-		.filter((word) => !new Set(["that", "this", "with", "from", "into", "about", "quickly", "please", "return", "using", "should", "their", "there"]).has(word));
-}
-
-function taskSimilarity(a: string, b: string): number {
-	const aSet = new Set(normalizeTaskWords(a));
-	const bSet = new Set(normalizeTaskWords(b));
-	if (aSet.size === 0 || bSet.size === 0) return 0;
-	let overlap = 0;
-	for (const word of aSet) if (bSet.has(word)) overlap += 1;
-	const union = new Set([...aSet, ...bSet]).size;
-	return union === 0 ? 0 : overlap / union;
-}
-
-function formatToolCall(
-	toolName: string,
-	args: Record<string, unknown>,
-	themeFg: (color: any, text: string) => string,
-): string {
-	const shortenPath = (p: string) => {
-		const home = os.homedir();
-		return p.startsWith(home) ? `~${p.slice(home.length)}` : p;
-	};
-
-	switch (toolName) {
-		case "bash": {
-			const command = (args.command as string) || "...";
-			const preview = command.length > 60 ? `${command.slice(0, 60)}...` : command;
-			return themeFg("muted", "$ ") + themeFg("toolOutput", preview);
-		}
-		case "read": {
-			const rawPath = (args.file_path || args.path || "...") as string;
-			const filePath = shortenPath(rawPath);
-			const offset = args.offset as number | undefined;
-			const limit = args.limit as number | undefined;
-			let text = themeFg("accent", filePath);
-			if (offset !== undefined || limit !== undefined) {
-				const startLine = offset ?? 1;
-				const endLine = limit !== undefined ? startLine + limit - 1 : "";
-				text += themeFg("warning", `:${startLine}${endLine ? `-${endLine}` : ""}`);
-			}
-			return themeFg("muted", "read ") + text;
-		}
-		case "write": {
-			const rawPath = (args.file_path || args.path || "...") as string;
-			const filePath = shortenPath(rawPath);
-			const content = (args.content || "") as string;
-			const lines = content.split("\n").length;
-			let text = themeFg("muted", "write ") + themeFg("accent", filePath);
-			if (lines > 1) text += themeFg("dim", ` (${lines} lines)`);
-			return text;
-		}
-		case "edit": {
-			const rawPath = (args.file_path || args.path || "...") as string;
-			return themeFg("muted", "edit ") + themeFg("accent", shortenPath(rawPath));
-		}
-		case "ls": {
-			const rawPath = (args.path || ".") as string;
-			return themeFg("muted", "ls ") + themeFg("accent", shortenPath(rawPath));
-		}
-		case "find": {
-			const pattern = (args.pattern || "*") as string;
-			const rawPath = (args.path || ".") as string;
-			return themeFg("muted", "find ") + themeFg("accent", pattern) + themeFg("dim", ` in ${shortenPath(rawPath)}`);
-		}
-		case "grep": {
-			const pattern = (args.pattern || "") as string;
-			const rawPath = (args.path || ".") as string;
-			return (
-				themeFg("muted", "grep ") +
-				themeFg("accent", `/${pattern}/`) +
-				themeFg("dim", ` in ${shortenPath(rawPath)}`)
-			);
-		}
-		default: {
-			const argsStr = JSON.stringify(args);
-			const preview = argsStr.length > 50 ? `${argsStr.slice(0, 50)}...` : argsStr;
-			return themeFg("accent", toolName) + themeFg("dim", ` ${preview}`);
-		}
+function parseFrontmatterFile(text: string): { meta: Record<string, string>; body: string } {
+	const match = text.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$/);
+	if (!match) return { meta: {}, body: text.trim() };
+	const meta: Record<string, string> = {};
+	for (const line of match[1].split(/\r?\n/)) {
+		const separator = line.indexOf(":");
+		if (separator === -1) continue;
+		const key = line.slice(0, separator).trim();
+		const value = line.slice(separator + 1).trim();
+		if (!key) continue;
+		meta[key] = value;
 	}
+	return { meta, body: match[2].trim() };
 }
 
-interface UsageStats {
-	input: number;
-	output: number;
-	cacheRead: number;
-	cacheWrite: number;
-	cost: number;
-	contextTokens: number;
-	turns: number;
-}
-
-interface SingleResult {
-	agent: string;
-	agentSource: "user" | "project" | "unknown";
-	task: string;
-	exitCode: number;
-	messages: Message[];
-	stderr: string;
-	usage: UsageStats;
-	model?: string;
-	stopReason?: string;
-	errorMessage?: string;
-	step?: number;
-	maxTurns: number;
-	maxToolCalls: number;
-	maxDurationSeconds: number;
-	toolCallsUsed: number;
-	durationMs: number;
-}
-
-interface SubagentDetails {
-	mode: "single" | "parallel" | "chain";
-	agentScope: AgentScope;
-	projectAgentsDir: string | null;
-	results: SingleResult[];
-}
-
-function getFinalOutput(messages: Message[]): string {
-	for (let i = messages.length - 1; i >= 0; i--) {
-		const msg = messages[i];
-		if (msg.role === "assistant") {
-			for (const part of msg.content) {
-				if (part.type === "text") return part.text;
-			}
-		}
+async function loadWorkerRoster(): Promise<WorkerSpec[]> {
+	let entries: string[] = [];
+	try {
+		entries = await fsp.readdir(AGENTS_DIR);
+	} catch {
+		return [];
 	}
-	return "";
+
+	const workers: WorkerSpec[] = [];
+	for (const entry of entries.filter((name) => name.endsWith(".md")).sort()) {
+		const filePath = path.join(AGENTS_DIR, entry);
+		let text = "";
+		try {
+			text = await fsp.readFile(filePath, "utf8");
+		} catch {
+			continue;
+		}
+		const { meta, body } = parseFrontmatterFile(text);
+		if (!meta.name || !meta.description || !body) continue;
+		workers.push({
+			name: meta.name,
+			description: meta.description,
+			tools: meta.tools ? meta.tools.split(",").map((item) => item.trim()).filter(Boolean) : WORKER_TOOLS,
+			model: meta.model || undefined,
+			thinking: meta.thinking || undefined,
+			systemPrompt: body,
+		});
+	}
+	return workers;
 }
 
-type DisplayItem = { type: "text"; text: string } | { type: "toolCall"; name: string; args: Record<string, any> };
+function listWorkerNames(roster: WorkerSpec[]) {
+	return roster.map((worker) => worker.name).join(", ");
+}
 
-function getDisplayItems(messages: Message[]): DisplayItem[] {
-	const items: DisplayItem[] = [];
-	for (const msg of messages) {
-		if (msg.role === "assistant") {
-			for (const part of msg.content) {
-				if (part.type === "text") items.push({ type: "text", text: part.text });
-				else if (part.type === "toolCall") items.push({ type: "toolCall", name: part.name, args: part.arguments });
-			}
-		}
-	}
-	return items;
+function getWorkerSpec(roster: WorkerSpec[], name: string): WorkerSpec | undefined {
+	return roster.find((worker) => worker.name === name);
+}
+
+async function writeTempPrompt(text: string) {
+	const dir = await fsp.mkdtemp(path.join(os.tmpdir(), "pi-subagent-"));
+	const filePath = path.join(dir, "system.md");
+	await fsp.writeFile(filePath, text, { encoding: "utf8", mode: 0o600 });
+	return { dir, filePath };
+}
+
+async function cleanupTempPrompt(temp: { dir: string; filePath: string } | null) {
+	if (!temp) return;
+	await fsp.unlink(temp.filePath).catch(() => undefined);
+	await fsp.rmdir(temp.dir).catch(() => undefined);
 }
 
 async function mapWithConcurrencyLimit<TIn, TOut>(
@@ -332,178 +249,98 @@ async function mapWithConcurrencyLimit<TIn, TOut>(
 ): Promise<TOut[]> {
 	if (items.length === 0) return [];
 	const limit = Math.max(1, Math.min(concurrency, items.length));
-	const results: TOut[] = new Array(items.length);
+	const results = new Array<TOut>(items.length);
 	let nextIndex = 0;
 	const workers = new Array(limit).fill(null).map(async () => {
 		while (true) {
-			const current = nextIndex++;
-			if (current >= items.length) return;
-			results[current] = await fn(items[current], current);
+			const index = nextIndex++;
+			if (index >= items.length) return;
+			results[index] = await fn(items[index], index);
 		}
 	});
 	await Promise.all(workers);
 	return results;
 }
 
-async function writePromptToTempFile(agentName: string, prompt: string): Promise<{ dir: string; filePath: string }> {
-	const tmpDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pi-subagent-"));
-	const safeName = agentName.replace(/[^\w.-]+/g, "_");
-	const filePath = path.join(tmpDir, `prompt-${safeName}.md`);
-	await withFileMutationQueue(filePath, async () => {
-		await fs.promises.writeFile(filePath, prompt, { encoding: "utf-8", mode: 0o600 });
-	});
-	return { dir: tmpDir, filePath };
-}
-
-function getPiInvocation(args: string[]): { command: string; args: string[] } {
-	const currentScript = process.argv[1];
-	if (currentScript && fs.existsSync(currentScript)) {
-		return { command: process.execPath, args: [currentScript, ...args] };
-	}
-
-	const execName = path.basename(process.execPath).toLowerCase();
-	const isGenericRuntime = /^(node|bun)(\.exe)?$/.test(execName);
-	if (!isGenericRuntime) {
-		return { command: process.execPath, args };
-	}
-
-	return { command: "pi", args };
-}
-
-type OnUpdateCallback = (partial: AgentToolResult<SubagentDetails>) => void;
-
-type RuntimeOptions = {
-	modelArg?: string;
-	thinkingLevel?: string;
-};
-
-function countAssistantToolCalls(message: Message): number {
-	if (message.role !== "assistant") return 0;
-	return message.content.filter((part) => part.type === "toolCall").length;
-}
-
-async function runSingleAgent(
+async function runWorker(
+	task: WorkerTask,
+	worker: WorkerSpec,
+	index: number,
 	defaultCwd: string,
-	agents: AgentConfig[],
-	agentName: string,
-	task: string,
-	cwd: string | undefined,
-	step: number | undefined,
-	limitsOverride: Partial<AgentLimits> | undefined,
+	defaultModel: string | undefined,
+	defaultThinking: string | undefined,
 	signal: AbortSignal | undefined,
-	onUpdate: OnUpdateCallback | undefined,
-	makeDetails: (results: SingleResult[]) => SubagentDetails,
-	runtimeOptions: RuntimeOptions = {},
-): Promise<SingleResult> {
-	const agent = agents.find((a) => a.name === agentName);
-
-	if (!agent) {
-		const available = agents.map((a) => `"${a.name}"`).join(", ") || "none";
-		return {
-			agent: agentName,
-			agentSource: "unknown",
-			task,
-			exitCode: 1,
-			messages: [],
-			stderr: `Unknown agent: "${agentName}". Available agents: ${available}.`,
-			usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-			step,
-			maxTurns: 0,
-			maxToolCalls: 0,
-			maxDurationSeconds: 0,
-			toolCallsUsed: 0,
-			durationMs: 0,
-		};
-	}
-
-	const limits = resolveAgentLimits(agentName, limitsOverride);
-	const selectedModel = agent.inheritRuntimeModel === false ? agent.model || runtimeOptions.modelArg : runtimeOptions.modelArg || agent.model;
-	const selectedThinking =
-		agent.inheritRuntimeThinking === false
-			? agent.thinking || runtimeOptions.thinkingLevel
-			: runtimeOptions.thinkingLevel || agent.thinking;
-	const args: string[] = ["--mode", "json", "-p", "--no-session"];
-	if (selectedModel) args.push("--model", selectedModel);
-	if (selectedThinking) args.push("--thinking", selectedThinking);
-	if (agent.tools && agent.tools.length > 0) args.push("--tools", agent.tools.join(","));
-
-	let tmpPromptDir: string | null = null;
-	let tmpPromptPath: string | null = null;
-	const startedAt = Date.now();
-	let wasAborted = false;
-	let forcedStopReason: string | undefined;
-	let forcedErrorMessage: string | undefined;
-
-	const currentResult: SingleResult = {
-		agent: agentName,
-		agentSource: agent.source,
-		task,
-		exitCode: 0,
-		messages: [],
-		stderr: "",
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-		model: selectedModel,
-		step,
-		maxTurns: limits.maxTurns,
-		maxToolCalls: limits.maxToolCalls,
-		maxDurationSeconds: limits.maxDurationSeconds,
-		toolCallsUsed: 0,
+): Promise<WorkerResult> {
+	const label = task.label?.trim() || `worker-${index + 1}`;
+	const cwd = task.cwd || defaultCwd;
+	const result: WorkerResult = {
+		label,
+		worker: worker.name,
+		task: task.task,
+		cwd,
+		exitCode: -1,
+		output: "",
+		error: undefined,
 		durationMs: 0,
 	};
 
-	const emitUpdate = () => {
-		currentResult.durationMs = Date.now() - startedAt;
-		if (onUpdate) {
-			onUpdate({
-				content: [{ type: "text", text: getFinalOutput(currentResult.messages) || "(running...)" }],
-				details: makeDetails([currentResult]),
-			});
-		}
+	const promptFile = await writeTempPrompt(buildWorkerPrompt(worker, cwd));
+	const invocation = getPiInvocation();
+	const tools = worker.tools.length > 0 ? worker.tools : WORKER_TOOLS;
+	const model = worker.model || defaultModel;
+	const thinking = worker.thinking || defaultThinking;
+	const args = [
+		...invocation.args,
+		"--mode",
+		"json",
+		"-p",
+		"--no-session",
+		"--append-system-prompt",
+		promptFile.filePath,
+		"--tools",
+		tools.join(","),
+	];
+	if (model) args.push("--model", model);
+	if (thinking && thinking !== "off") args.push("--thinking", thinking);
+	args.push(task.task);
+
+	const startedAt = Date.now();
+	const emit = () => {
+		result.durationMs = Date.now() - startedAt;
 	};
 
 	try {
-		if (agent.systemPrompt.trim()) {
-			const tmp = await writePromptToTempFile(agent.name, agent.systemPrompt);
-			tmpPromptDir = tmp.dir;
-			tmpPromptPath = tmp.filePath;
-			args.push("--append-system-prompt", tmpPromptPath);
-		}
-
-		args.push(`Task: ${task}`);
-
-		const exitCode = await new Promise<number>((resolve) => {
-			const invocation = getPiInvocation(args);
-			const proc = spawn(invocation.command, invocation.args, {
-				cwd: cwd ?? defaultCwd,
+		await new Promise<void>((resolve, reject) => {
+			const proc = spawn(invocation.command, args, {
+				cwd,
 				shell: false,
 				stdio: ["ignore", "pipe", "pipe"],
 				env: {
 					...process.env,
 					[WORKER_BYPASS_ENV]: "1",
-					KILN_ACTOR_KIND: "worker",
+					[SESSION_BYPASS_ENV]: "1",
 					PI_SKIP_VERSION_CHECK: "1",
 				},
 			});
+
 			let buffer = "";
+			let stderr = "";
 			let settled = false;
-			let budgetTimer: NodeJS.Timeout | undefined;
+			let timeout: NodeJS.Timeout | undefined;
 			let abortHandler: (() => void) | undefined;
 
-			const finish = (code: number) => {
+			const finish = (error?: Error) => {
 				if (settled) return;
 				settled = true;
-				if (budgetTimer) clearTimeout(budgetTimer);
+				if (timeout) clearTimeout(timeout);
 				if (signal && abortHandler) signal.removeEventListener("abort", abortHandler);
-				resolve(code);
+				if (error) reject(error);
+				else resolve();
 			};
 
-			const stopProc = (reason: "aborted" | "error", message: string) => {
-				if (forcedStopReason) return;
-				forcedStopReason = reason;
-				forcedErrorMessage = message;
-				currentResult.stopReason = reason;
-				currentResult.errorMessage = message;
-				currentResult.durationMs = Date.now() - startedAt;
+			const stop = (message: string) => {
+				if (!result.error) result.error = message;
+				emit();
 				proc.kill("SIGTERM");
 				const killTimer = setTimeout(() => {
 					if (proc.exitCode === null) proc.kill("SIGKILL");
@@ -519,923 +356,289 @@ async function runSingleAgent(
 				} catch {
 					return;
 				}
-
-				if (event.type === "message_end" && event.message) {
-					const msg = event.message as Message;
-					currentResult.messages.push(msg);
-
-					if (msg.role === "assistant") {
-						currentResult.usage.turns++;
-						currentResult.toolCallsUsed += countAssistantToolCalls(msg);
-						const usage = msg.usage;
-						if (usage) {
-							currentResult.usage.input += usage.input || 0;
-							currentResult.usage.output += usage.output || 0;
-							currentResult.usage.cacheRead += usage.cacheRead || 0;
-							currentResult.usage.cacheWrite += usage.cacheWrite || 0;
-							currentResult.usage.cost += usage.cost?.total || 0;
-							currentResult.usage.contextTokens = usage.totalTokens || 0;
-						}
-						if (!currentResult.model && msg.model) currentResult.model = msg.model;
-						if (msg.stopReason) currentResult.stopReason = msg.stopReason;
-						if (msg.errorMessage) currentResult.errorMessage = msg.errorMessage;
-						currentResult.durationMs = Date.now() - startedAt;
-						if (currentResult.usage.turns > currentResult.maxTurns) {
-							stopProc(
-								"error",
-								`Budget exceeded: turns ${currentResult.usage.turns}/${currentResult.maxTurns}. Do not relaunch the same task unchanged; either decompose it or retry once with a larger explicit budget if this role is still the right fit.`,
-							);
-						} else if (currentResult.toolCallsUsed > currentResult.maxToolCalls) {
-							stopProc(
-								"error",
-								`Budget exceeded: tool calls ${currentResult.toolCallsUsed}/${currentResult.maxToolCalls}. Do not relaunch the same task unchanged; either decompose it or retry once with a larger explicit budget if this role is still the right fit.`,
-							);
-						}
-					}
-					emitUpdate();
-				}
-
-				if (event.type === "tool_result_end" && event.message) {
-					currentResult.messages.push(event.message as Message);
-					emitUpdate();
-				}
+				if (event.type !== "message_end" || event.message?.role !== "assistant") return;
+				const text = extractAssistantText(event.message);
+				if (text) result.output = text;
+				if (event.message?.errorMessage) result.error = event.message.errorMessage;
+				emit();
 			};
 
-			proc.stdout.on("data", (data) => {
-				buffer += data.toString();
+			proc.stdout.on("data", (chunk) => {
+				buffer += chunk.toString("utf8");
 				const lines = buffer.split("\n");
 				buffer = lines.pop() || "";
 				for (const line of lines) processLine(line);
 			});
 
-			proc.stderr.on("data", (data) => {
-				currentResult.stderr += data.toString();
+			proc.stderr.on("data", (chunk) => {
+				stderr += chunk.toString("utf8");
+			});
+
+			proc.on("error", (error) => {
+				result.exitCode = 1;
+				if (!result.error) result.error = error.message;
+				finish(error);
 			});
 
 			proc.on("close", (code, closeSignal) => {
 				if (buffer.trim()) processLine(buffer);
-				currentResult.durationMs = Date.now() - startedAt;
-				if (forcedStopReason || forcedErrorMessage) {
-					finish(code ?? 124);
-					return;
-				}
-				if (closeSignal) {
-					currentResult.stopReason = currentResult.stopReason || "error";
-					currentResult.errorMessage = currentResult.errorMessage || `Subagent exited via signal ${closeSignal}`;
-					finish(code ?? 128);
-					return;
-				}
-				finish(code ?? 0);
+				result.durationMs = Date.now() - startedAt;
+				result.exitCode = code ?? 0;
+				if (closeSignal && !result.error) result.error = `Worker exited via signal ${closeSignal}`;
+				if (result.exitCode !== 0 && !result.error) result.error = stderr.trim() || `Worker exited with code ${result.exitCode}`;
+				emit();
+				finish();
 			});
 
-			proc.on("error", (error) => {
-				currentResult.stopReason = currentResult.stopReason || "error";
-				currentResult.errorMessage = currentResult.errorMessage || error.message;
-				finish(1);
-			});
-
-			budgetTimer = setTimeout(() => {
-				stopProc(
-					"error",
-					`Budget exceeded: duration ${formatDurationMs(Date.now() - startedAt)}/${currentResult.maxDurationSeconds}s. Do not relaunch the same task unchanged; either decompose it or retry once with a larger explicit budget if this role is still the right fit.`,
-				);
-			}, currentResult.maxDurationSeconds * 1000);
-			budgetTimer.unref?.();
+			timeout = setTimeout(() => {
+				stop("Worker timed out.");
+			}, WORKER_TIMEOUT_MS);
+			timeout.unref?.();
 
 			if (signal) {
-				abortHandler = () => {
-					wasAborted = true;
-					stopProc("aborted", "Subagent was aborted by the caller");
-				};
+				abortHandler = () => stop("Worker aborted by orchestrator.");
 				if (signal.aborted) abortHandler();
 				else signal.addEventListener("abort", abortHandler, { once: true });
 			}
 		});
-
-		currentResult.durationMs = Date.now() - startedAt;
-		currentResult.exitCode = exitCode;
-		if (forcedStopReason && !currentResult.stopReason) currentResult.stopReason = forcedStopReason;
-		if (forcedErrorMessage && !currentResult.errorMessage) currentResult.errorMessage = forcedErrorMessage;
-		if (wasAborted) throw new Error("Subagent was aborted");
-		return currentResult;
 	} finally {
-		if (tmpPromptPath)
-			try {
-				fs.unlinkSync(tmpPromptPath);
-			} catch {
-				/* ignore */
-			}
-		if (tmpPromptDir)
-			try {
-				fs.rmdirSync(tmpPromptDir);
-			} catch {
-				/* ignore */
-			}
-	}
-}
-
-const TaskItem = Type.Object({
-	agent: Type.String({ description: "Name of the agent to invoke" }),
-	task: Type.String({ description: "Task to delegate to the agent" }),
-	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
-	maxTurns: Type.Optional(Type.Integer({ minimum: 1, description: `Turn budget override. Defaults per role, hard max ${HARD_MAX_TURNS}.` })),
-	maxToolCalls: Type.Optional(
-		Type.Integer({ minimum: 1, description: `Tool-call budget override. Defaults per role, hard max ${HARD_MAX_TOOL_CALLS}.` }),
-	),
-	maxDurationSeconds: Type.Optional(
-		Type.Integer({ minimum: 1, description: `Time budget override in seconds. Defaults per role, hard max ${HARD_MAX_DURATION_SECONDS}.` }),
-	),
-});
-
-const ChainItem = Type.Object({
-	agent: Type.String({ description: "Name of the agent to invoke" }),
-	task: Type.String({ description: "Task with optional {previous} placeholder for prior output" }),
-	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process" })),
-	maxTurns: Type.Optional(Type.Integer({ minimum: 1, description: `Turn budget override. Defaults per role, hard max ${HARD_MAX_TURNS}.` })),
-	maxToolCalls: Type.Optional(
-		Type.Integer({ minimum: 1, description: `Tool-call budget override. Defaults per role, hard max ${HARD_MAX_TOOL_CALLS}.` }),
-	),
-	maxDurationSeconds: Type.Optional(
-		Type.Integer({ minimum: 1, description: `Time budget override in seconds. Defaults per role, hard max ${HARD_MAX_DURATION_SECONDS}.` }),
-	),
-});
-
-const AgentScopeSchema = StringEnum(["user", "project", "both"] as const, {
-	description: 'Which agent directories to use. Default: "user". Use "both" to include project-local agents.',
-	default: "user",
-});
-
-const SubagentParams = Type.Object({
-	agent: Type.Optional(Type.String({ description: "Name of the agent to invoke (for single mode)" })),
-	task: Type.Optional(Type.String({ description: "Task to delegate (for single mode)" })),
-	tasks: Type.Optional(Type.Array(TaskItem, { description: "Array of {agent, task} for parallel execution" })),
-	chain: Type.Optional(Type.Array(ChainItem, { description: "Array of {agent, task} for sequential execution" })),
-	agentScope: Type.Optional(AgentScopeSchema),
-	confirmProjectAgents: Type.Optional(
-		Type.Boolean({ description: "Prompt before running project-local agents. Default: true.", default: true }),
-	),
-	cwd: Type.Optional(Type.String({ description: "Working directory for the agent process (single mode)" })),
-	maxTurns: Type.Optional(Type.Integer({ minimum: 1, description: `Turn budget override. Defaults per role, hard max ${HARD_MAX_TURNS}.` })),
-	maxToolCalls: Type.Optional(
-		Type.Integer({ minimum: 1, description: `Tool-call budget override. Defaults per role, hard max ${HARD_MAX_TOOL_CALLS}.` }),
-	),
-	maxDurationSeconds: Type.Optional(
-		Type.Integer({ minimum: 1, description: `Time budget override in seconds. Defaults per role, hard max ${HARD_MAX_DURATION_SECONDS}.` }),
-	),
-});
-
-type RequestedTask = {
-	agent: string;
-	task: string;
-	cwd?: string;
-	maxTurns?: number;
-	maxToolCalls?: number;
-	maxDurationSeconds?: number;
-};
-
-function validateRequestedTasks(mode: "single" | "parallel" | "chain", requests: RequestedTask[]): string | undefined {
-	for (const request of requests) {
-		try {
-			resolveAgentLimits(request.agent, request);
-		} catch (error) {
-			return `Invalid budget for ${request.agent}: ${(error as Error).message}.`;
-		}
-		if (request.agent === "scout" && looksLikeDebugOrExecutionTask(request.task)) {
-			return `Scout is not for debugging, fixes, or config/settings issue investigation. Use researcher for diagnosis or worker for execution-oriented troubleshooting instead.`;
-		}
-		if (request.agent === "scout" && looksLikeDeepAnalysisTask(request.task)) {
-			return `Scout is reserved for cheap, quick reconnaissance. Use researcher for in-depth analysis instead.`;
-		}
+		await cleanupTempPrompt(promptFile);
 	}
 
-	if (mode === "parallel") {
-		const scoutOverviewTasks = requests.filter(
-			(request) => request.agent === "scout" && looksLikeBroadRepoOverviewTask(request.task),
-		);
-		if (scoutOverviewTasks.length > 1) {
-			return "Do not run overlapping scout overview tasks in parallel. Use one scout pass, then escalate to researcher only if a concrete gap remains.";
-		}
+	return result;
+}
 
-		for (let i = 0; i < requests.length; i++) {
-			for (let j = i + 1; j < requests.length; j++) {
-				if (requests[i].agent !== requests[j].agent) continue;
-				if (taskSimilarity(requests[i].task, requests[j].task) >= 0.55) {
-					return `Parallel ${requests[i].agent} tasks overlap too much. Split the work into clearly distinct scopes or run a single task first.`;
-				}
-			}
-		}
+function summarizeParallel(results: WorkerResult[]) {
+	const done = results.filter((result) => result.exitCode !== -1).length;
+	const succeeded = results.filter((result) => result.exitCode === 0).length;
+	const lines = [`Parallel workers: ${succeeded}/${results.length} succeeded`];
+	if (done !== results.length) lines[0] += `, ${results.length - done} running`;
+	for (const result of results) {
+		lines.push(`- ${result.label}: ${preview(result.error || result.output)}`);
 	}
-
-	return undefined;
+	return lines.join("\n");
 }
 
-function createPlaceholderResult(task: RequestedTask): SingleResult {
-	const limits = resolveAgentLimits(task.agent, task);
-	return {
-		agent: task.agent,
-		agentSource: "unknown",
-		task: task.task,
-		exitCode: -1,
-		messages: [],
-		stderr: "",
-		usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, contextTokens: 0, turns: 0 },
-		maxTurns: limits.maxTurns,
-		maxToolCalls: limits.maxToolCalls,
-		maxDurationSeconds: limits.maxDurationSeconds,
-		toolCallsUsed: 0,
-		durationMs: 0,
-	};
-}
-
-function formatRequestedLimits(agent: string, task: Partial<RequestedTask>): string {
-	try {
-		const limits = resolveAgentLimits(agent, task);
-		return `${limits.maxTurns}t/${limits.maxToolCalls}c/${limits.maxDurationSeconds}s`;
-	} catch {
-		return "invalid budget";
-	}
-}
-
-export default function (pi: ExtensionAPI) {
+export default function delegatedSubagents(pi: ExtensionAPI) {
 	if (process.env[WORKER_BYPASS_ENV] === "1" || process.env[SESSION_BYPASS_ENV] === "1") return;
 
-	pi.on("session_start", async () => {
+	pi.on("session_start", async (_event, ctx) => {
 		pi.setActiveTools(["subagent"]);
+		setOrchestratorStatus(ctx);
 	});
 
-	pi.on("before_agent_start", async (event) => ({
-		systemPrompt: `${event.systemPrompt}\n\n${buildDelegationInstructions()}`,
-	}));
+	pi.on("before_agent_start", async (event) => {
+		const roster = await loadWorkerRoster();
+		return {
+			systemPrompt: `${event.systemPrompt}\n\n${buildControllerPrompt(roster)}`,
+		};
+	});
+
+	pi.registerCommand("workers", {
+		description: "Show available global worker roles",
+		handler: async (_args, ctx) => {
+			const roster = await loadWorkerRoster();
+			if (roster.length === 0) {
+				if (ctx.hasUI) ctx.ui.notify(`No workers found in ${AGENTS_DIR}`, "warning");
+				return;
+			}
+			const lines = roster.map((worker) => `${worker.name} - ${worker.description}`);
+			if (ctx.hasUI) ctx.ui.notify(lines.join("\n"), "info");
+		},
+	});
 
 	pi.registerTool({
 		name: "subagent",
 		label: "Subagent",
-		description: [
-			"Delegate tasks to specialized subagents with isolated context.",
-			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
-			'Default agent scope is "user" (from ~/.pi/agent/agents).',
-			'To enable project-local agents in .pi/agents, set agentScope: "both" (or "project").',
-			"Each subagent run is budgeted by turns, tool calls, and time.",
-		].join(" "),
-		promptSnippet:
-			"Delegate repo work, verification, and code changes to isolated agents. Use scout only for quick recon, verifier for proof, and researcher/worker for deeper investigation or execution.",
+		description: "Delegate actual work to isolated worker processes. The primary session stays user-facing and orchestration-only.",
+		promptSnippet: "Use subagent for all real work.",
 		promptGuidelines: [
-			"Use this tool for any real work instead of claiming you ran commands or inspected files yourself.",
-			"Keep delegated tasks single-purpose and bounded; split diagnosis, implementation, and verification when they are distinct.",
-			"Scout is for cheap, quick reconnaissance only. Use researcher for in-depth analysis or external docs.",
-			"Do not use scout for debugging, error investigation, fixes, or config/settings issues.",
-			"Researcher is repo-first: use web-search/scrape only when local evidence is insufficient or current/external docs are required.",
-			"Use verifier for tests, repro checks, build/typecheck/lint runs, and acceptance validation.",
-			"When delegating to verifier, include the original spec or acceptance criteria and ask for proof.",
-			"Do not use web tools for simple repo-only questions.",
-			"For simple repo summaries, start with one scout pass and synthesize before launching more agents.",
-			"Do not send overlapping scout tasks in parallel.",
-			"Prefer self-contained delegated tasks over tiny one-command requests, but do not bundle unrelated phases together.",
-			"If the task obviously exceeds the default budget for the right role, pass explicit maxTurns/maxToolCalls/maxDurationSeconds once up front instead of retrying repeatedly.",
-			"Use parallel tasks only when scopes are clearly independent.",
+			"Do not claim you inspected files, ran commands, edited code, or verified behavior yourself.",
+			"Delegate real work to workers.",
+			"Keep each worker task narrow and concrete.",
 		],
-		parameters: SubagentParams,
+		parameters: ParamsSchema,
 
-		async execute(_toolCallId, params, signal, onUpdate, ctx) {
-			const agentScope: AgentScope = params.agentScope ?? "user";
-			const discovery = discoverAgents(ctx.cwd, agentScope);
-			const agents = discovery.agents;
-			const confirmProjectAgents = params.confirmProjectAgents ?? true;
-
-			const hasChain = (params.chain?.length ?? 0) > 0;
-			const hasTasks = (params.tasks?.length ?? 0) > 0;
-			const hasSingle = Boolean(params.agent && params.task);
-			const modeCount = Number(hasChain) + Number(hasTasks) + Number(hasSingle);
-
-			const makeDetails =
-				(mode: "single" | "parallel" | "chain") =>
-				(results: SingleResult[]): SubagentDetails => ({
-					mode,
-					agentScope,
-					projectAgentsDir: discovery.projectAgentsDir,
-					results,
-				});
-			const runtimeOptions: RuntimeOptions = {
-				modelArg: getCurrentModelArg(ctx),
-				thinkingLevel: pi.getThinkingLevel(),
-			};
-
-			if (modeCount !== 1) {
-				const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
+		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+			const roster = await loadWorkerRoster();
+			if (roster.length === 0) {
 				return {
-					content: [
-						{
-							type: "text",
-							text: `Invalid parameters. Provide exactly one mode.\nAvailable agents: ${available}`,
-						},
-					],
-					details: makeDetails("single")([]),
-				};
-			}
-
-			const requestedMode: "single" | "parallel" | "chain" = hasChain ? "chain" : hasTasks ? "parallel" : "single";
-			const requestedTasks: RequestedTask[] = hasChain
-				? params.chain!
-				: hasTasks
-					? params.tasks!
-					: [
-							{
-								agent: params.agent!,
-								task: params.task!,
-								cwd: params.cwd,
-								maxTurns: params.maxTurns,
-								maxToolCalls: params.maxToolCalls,
-								maxDurationSeconds: params.maxDurationSeconds,
-							},
-						];
-			const validationError = validateRequestedTasks(requestedMode, requestedTasks);
-			if (validationError) {
-				return {
-					content: [{ type: "text", text: validationError }],
-					details: makeDetails(requestedMode)([]),
+					content: [{ type: "text", text: `No workers found in ${AGENTS_DIR}.` }],
+					details: { mode: "single", results: [] } satisfies ToolDetails,
 					isError: true,
 				};
 			}
 
-			if ((agentScope === "project" || agentScope === "both") && confirmProjectAgents && ctx.hasUI) {
-				const requestedAgentNames = new Set<string>();
-				if (params.chain) for (const step of params.chain) requestedAgentNames.add(step.agent);
-				if (params.tasks) for (const t of params.tasks) requestedAgentNames.add(t.agent);
-				if (params.agent) requestedAgentNames.add(params.agent);
+			const hasSingle = typeof params.task === "string" && params.task.trim().length > 0;
+			const hasParallel = Array.isArray(params.tasks) && params.tasks.length > 0;
 
-				const projectAgentsRequested = Array.from(requestedAgentNames)
-					.map((name) => agents.find((a) => a.name === name))
-					.filter((a): a is AgentConfig => a?.source === "project");
-
-				if (projectAgentsRequested.length > 0) {
-					const names = projectAgentsRequested.map((a) => a.name).join(", ");
-					const dir = discovery.projectAgentsDir ?? "(unknown)";
-					const ok = await ctx.ui.confirm(
-						"Run project-local agents?",
-						`Agents: ${names}\nSource: ${dir}\n\nProject agents are repo-controlled. Only continue for trusted repositories.`,
-					);
-					if (!ok)
-						return {
-							content: [{ type: "text", text: "Canceled: project-local agents not approved." }],
-							details: makeDetails(hasChain ? "chain" : hasTasks ? "parallel" : "single")([]),
-						};
-				}
-			}
-
-			if (params.chain && params.chain.length > 0) {
-				const results: SingleResult[] = [];
-				let previousOutput = "";
-
-				for (let i = 0; i < params.chain.length; i++) {
-					const step = params.chain[i];
-					const taskWithContext = step.task.replace(/\{previous\}/g, previousOutput);
-
-					// Create update callback that includes all previous results
-					const chainUpdate: OnUpdateCallback | undefined = onUpdate
-						? (partial) => {
-								// Combine completed results with current streaming result
-								const currentResult = partial.details?.results[0];
-								if (currentResult) {
-									const allResults = [...results, currentResult];
-									onUpdate({
-										content: partial.content,
-										details: makeDetails("chain")(allResults),
-									});
-								}
-							}
-						: undefined;
-
-					const result = await runSingleAgent(
-						ctx.cwd,
-						agents,
-						step.agent,
-						taskWithContext,
-						step.cwd,
-						i + 1,
-						{
-							maxTurns: step.maxTurns,
-							maxToolCalls: step.maxToolCalls,
-							maxDurationSeconds: step.maxDurationSeconds,
-						},
-						signal,
-						chainUpdate,
-						makeDetails("chain"),
-						runtimeOptions,
-					);
-					results.push(result);
-
-					const isError =
-						result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
-					if (isError) {
-						const errorMsg =
-							result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
-						return {
-							content: [{ type: "text", text: `Chain stopped at step ${i + 1} (${step.agent}): ${errorMsg}` }],
-							details: makeDetails("chain")(results),
-							isError: true,
-						};
-					}
-					previousOutput = getFinalOutput(result.messages);
-				}
+			if (Number(hasSingle) + Number(hasParallel) !== 1) {
 				return {
-					content: [{ type: "text", text: getFinalOutput(results[results.length - 1].messages) || "(no output)" }],
-					details: makeDetails("chain")(results),
+					content: [{ type: "text", text: "Provide either `task` or `tasks`." }],
+					details: { mode: "single", results: [] } satisfies ToolDetails,
+					isError: true,
 				};
 			}
 
-			if (params.tasks && params.tasks.length > 0) {
-				if (params.tasks.length > MAX_PARALLEL_TASKS)
+			const model = getCurrentModelArg(ctx);
+			const thinking = pi.getThinkingLevel();
+
+			if (hasSingle) {
+				const workerName = typeof params.worker === "string" && params.worker.trim() ? params.worker.trim() : "worker";
+				const worker = getWorkerSpec(roster, workerName);
+				if (!worker) {
 					return {
-						content: [
-							{
-								type: "text",
-								text: `Too many parallel tasks (${params.tasks.length}). Max is ${MAX_PARALLEL_TASKS}.`,
-							},
-						],
-						details: makeDetails("parallel")([]),
-					};
-
-				// Track all results for streaming updates
-				const allResults: SingleResult[] = new Array(params.tasks.length);
-
-				// Initialize placeholder results
-				for (let i = 0; i < params.tasks.length; i++) {
-					allResults[i] = createPlaceholderResult(params.tasks[i]);
-				}
-
-				const emitParallelUpdate = () => {
-					if (onUpdate) {
-						const running = allResults.filter((r) => r.exitCode === -1).length;
-						const done = allResults.filter((r) => r.exitCode !== -1).length;
-						onUpdate({
-							content: [
-								{ type: "text", text: `Parallel: ${done}/${allResults.length} done, ${running} running...` },
-							],
-							details: makeDetails("parallel")([...allResults]),
-						});
-					}
-				};
-
-				const results = await mapWithConcurrencyLimit(params.tasks, MAX_CONCURRENCY, async (t, index) => {
-					const result = await runSingleAgent(
-						ctx.cwd,
-						agents,
-						t.agent,
-						t.task,
-						t.cwd,
-						undefined,
-						{
-							maxTurns: t.maxTurns,
-							maxToolCalls: t.maxToolCalls,
-							maxDurationSeconds: t.maxDurationSeconds,
-						},
-						signal,
-						// Per-task update callback
-						(partial) => {
-							if (partial.details?.results[0]) {
-								allResults[index] = partial.details.results[0];
-								emitParallelUpdate();
-							}
-						},
-						makeDetails("parallel"),
-						runtimeOptions,
-					);
-					allResults[index] = result;
-					emitParallelUpdate();
-					return result;
-				});
-
-				const successCount = results.filter((r) => r.exitCode === 0).length;
-				const summaries = results.map((r) => {
-					const output = getFinalOutput(r.messages);
-					const preview = output.slice(0, 100) + (output.length > 100 ? "..." : "");
-					return `[${r.agent}] ${r.exitCode === 0 ? "completed" : "failed"}: ${preview || "(no output)"}`;
-				});
-				return {
-					content: [
-						{
-							type: "text",
-							text: `Parallel: ${successCount}/${results.length} succeeded\n\n${summaries.join("\n\n")}`,
-						},
-					],
-					details: makeDetails("parallel")(results),
-				};
-			}
-
-			if (params.agent && params.task) {
-				const result = await runSingleAgent(
-					ctx.cwd,
-					agents,
-					params.agent,
-					params.task,
-					params.cwd,
-					undefined,
-					{
-						maxTurns: params.maxTurns,
-						maxToolCalls: params.maxToolCalls,
-						maxDurationSeconds: params.maxDurationSeconds,
-					},
-					signal,
-					onUpdate,
-					makeDetails("single"),
-					runtimeOptions,
-				);
-				const isError = result.exitCode !== 0 || result.stopReason === "error" || result.stopReason === "aborted";
-				if (isError) {
-					const errorMsg =
-						result.errorMessage || result.stderr || getFinalOutput(result.messages) || "(no output)";
-					return {
-						content: [{ type: "text", text: `Agent ${result.stopReason || "failed"}: ${errorMsg}` }],
-						details: makeDetails("single")([result]),
+						content: [{ type: "text", text: `Unknown worker: ${workerName}. Available workers: ${listWorkerNames(roster)}.` }],
+						details: { mode: "single", results: [] } satisfies ToolDetails,
 						isError: true,
 					};
 				}
+				const task: WorkerTask = {
+					label: params.label,
+					worker: worker.name,
+					task: params.task,
+					cwd: params.cwd,
+				};
+				const runningResult: WorkerResult = {
+					label: task.label?.trim() || "worker-1",
+					worker: worker.name,
+					task: task.task,
+					cwd: task.cwd || ctx.cwd,
+					exitCode: -1,
+					output: "",
+					error: undefined,
+					durationMs: 0,
+				};
+				setOrchestratorStatus(ctx, [runningResult]);
+				try {
+					const result = await runWorker(task, worker, 0, ctx.cwd, model, thinking, signal);
+					setOrchestratorStatus(ctx, [result]);
+					return {
+						content: [{ type: "text", text: result.error ? `Worker failed: ${result.error}` : result.output || "(no output)" }],
+						details: { mode: "single", results: [result] } satisfies ToolDetails,
+						isError: result.exitCode !== 0,
+					};
+				} catch (error: any) {
+					setOrchestratorStatus(ctx);
+					throw error;
+				}
+			}
+
+			if (params.tasks.length > HARD_MAX_PARALLEL) {
 				return {
-					content: [{ type: "text", text: getFinalOutput(result.messages) || "(no output)" }],
-					details: makeDetails("single")([result]),
+					content: [{ type: "text", text: `Too many parallel workers. Max is ${HARD_MAX_PARALLEL}.` }],
+					details: { mode: "parallel", results: [] } satisfies ToolDetails,
+					isError: true,
 				};
 			}
 
-			const available = agents.map((a) => `${a.name} (${a.source})`).join(", ") || "none";
-			return {
-				content: [{ type: "text", text: `Invalid parameters. Available agents: ${available}` }],
-				details: makeDetails("single")([]),
-			};
-		},
-
-		renderCall(args, theme, _context) {
-			const scope: AgentScope = args.agentScope ?? "user";
-			if (args.chain && args.chain.length > 0) {
-				let text =
-					theme.fg("toolTitle", theme.bold("subagent ")) +
-					theme.fg("accent", `chain (${args.chain.length} steps)`) +
-					theme.fg("muted", ` [${scope}]`);
-				for (let i = 0; i < Math.min(args.chain.length, 3); i++) {
-					const step = args.chain[i];
-					// Clean up {previous} placeholder for display
-					const cleanTask = step.task.replace(/\{previous\}/g, "").trim();
-					const preview = cleanTask.length > 40 ? `${cleanTask.slice(0, 40)}...` : cleanTask;
-					const limits = formatRequestedLimits(step.agent, step);
-					text +=
-						"\n  " +
-						theme.fg("muted", `${i + 1}.`) +
-						" " +
-						theme.fg("accent", step.agent) +
-						theme.fg("dim", ` ${preview} [${limits}]`);
+			const resolvedTasks: Array<{ task: WorkerTask; worker: WorkerSpec }> = [];
+			for (const item of params.tasks as WorkerTask[]) {
+				const workerName = item.worker?.trim() || "worker";
+				const worker = getWorkerSpec(roster, workerName);
+				if (!worker) {
+					return {
+						content: [{ type: "text", text: `Unknown worker: ${workerName}. Available workers: ${listWorkerNames(roster)}.` }],
+						details: { mode: "parallel", results: [] } satisfies ToolDetails,
+						isError: true,
+					};
 				}
-				if (args.chain.length > 3) text += `\n  ${theme.fg("muted", `... +${args.chain.length - 3} more`)}`;
-				return new Text(text, 0, 0);
-			}
-			if (args.tasks && args.tasks.length > 0) {
-				let text =
-					theme.fg("toolTitle", theme.bold("subagent ")) +
-					theme.fg("accent", `parallel (${args.tasks.length} tasks)`) +
-					theme.fg("muted", ` [${scope}]`);
-				for (const t of args.tasks.slice(0, 3)) {
-					const preview = t.task.length > 40 ? `${t.task.slice(0, 40)}...` : t.task;
-					const limits = formatRequestedLimits(t.agent, t);
-					text += `\n  ${theme.fg("accent", t.agent)}${theme.fg("dim", ` ${preview} [${limits}]`)}`;
-				}
-				if (args.tasks.length > 3) text += `\n  ${theme.fg("muted", `... +${args.tasks.length - 3} more`)}`;
-				return new Text(text, 0, 0);
-			}
-			const agentName = args.agent || "...";
-			const preview = args.task ? (args.task.length > 60 ? `${args.task.slice(0, 60)}...` : args.task) : "...";
-			const limits = formatRequestedLimits(agentName, args);
-			let text =
-				theme.fg("toolTitle", theme.bold("subagent ")) +
-				theme.fg("accent", agentName) +
-				theme.fg("muted", ` [${scope}]`);
-			text += `\n  ${theme.fg("dim", `${preview} [${limits}]`)}`;
-			return new Text(text, 0, 0);
-		},
-
-		renderResult(result, { expanded }, theme, _context) {
-			const details = result.details as SubagentDetails | undefined;
-			if (!details || details.results.length === 0) {
-				const text = result.content[0];
-				return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
-			}
-
-			const mdTheme = getMarkdownTheme();
-
-			const renderDisplayItems = (items: DisplayItem[], limit?: number) => {
-				const toShow = limit ? items.slice(-limit) : items;
-				const skipped = limit && items.length > limit ? items.length - limit : 0;
-				let text = "";
-				if (skipped > 0) text += theme.fg("muted", `... ${skipped} earlier items\n`);
-				for (const item of toShow) {
-					if (item.type === "text") {
-						const preview = expanded ? item.text : item.text.split("\n").slice(0, 3).join("\n");
-						text += `${theme.fg("toolOutput", preview)}\n`;
-					} else {
-						text += `${theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme))}\n`;
-					}
-				}
-				return text.trimEnd();
-			};
-
-			if (details.mode === "single" && details.results.length === 1) {
-				const r = details.results[0];
-				const isError = r.exitCode !== 0 || r.stopReason === "error" || r.stopReason === "aborted";
-				const icon = isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
-				const displayItems = getDisplayItems(r.messages);
-				const finalOutput = getFinalOutput(r.messages);
-
-				if (expanded) {
-					const container = new Container();
-					let header = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))}${theme.fg("muted", ` (${r.agentSource})`)}`;
-					if (isError && r.stopReason) header += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
-					container.addChild(new Text(header, 0, 0));
-					if (isError && r.errorMessage)
-						container.addChild(new Text(theme.fg("error", `Error: ${r.errorMessage}`), 0, 0));
-					container.addChild(new Spacer(1));
-					container.addChild(new Text(theme.fg("muted", "─── Task ───"), 0, 0));
-					container.addChild(new Text(theme.fg("dim", r.task), 0, 0));
-					container.addChild(new Spacer(1));
-					container.addChild(new Text(theme.fg("muted", "─── Output ───"), 0, 0));
-					if (displayItems.length === 0 && !finalOutput) {
-						container.addChild(new Text(theme.fg("muted", "(no output)"), 0, 0));
-					} else {
-						for (const item of displayItems) {
-							if (item.type === "toolCall")
-								container.addChild(
-									new Text(
-										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
-										0,
-										0,
-									),
-								);
-						}
-						if (finalOutput) {
-							container.addChild(new Spacer(1));
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
-						}
-					}
-					const usageStr = formatUsageStats(r.usage, r.model);
-					const limitStr = formatLimitStats({
-						turnsUsed: r.usage.turns,
-						maxTurns: r.maxTurns,
-						toolCallsUsed: r.toolCallsUsed,
-						maxToolCalls: r.maxToolCalls,
-						durationMs: r.durationMs,
-						maxDurationSeconds: r.maxDurationSeconds,
-					});
-					if (usageStr || limitStr) {
-						container.addChild(new Spacer(1));
-						if (usageStr) container.addChild(new Text(theme.fg("dim", usageStr), 0, 0));
-						if (limitStr) container.addChild(new Text(theme.fg("dim", limitStr), 0, 0));
-					}
-					return container;
-				}
-
-				let text = `${icon} ${theme.fg("toolTitle", theme.bold(r.agent))}${theme.fg("muted", ` (${r.agentSource})`)}`;
-				if (isError && r.stopReason) text += ` ${theme.fg("error", `[${r.stopReason}]`)}`;
-				if (isError && r.errorMessage) text += `\n${theme.fg("error", `Error: ${r.errorMessage}`)}`;
-				else if (displayItems.length === 0) text += `\n${theme.fg("muted", "(no output)")}`;
-				else {
-					text += `\n${renderDisplayItems(displayItems, COLLAPSED_ITEM_COUNT)}`;
-					if (displayItems.length > COLLAPSED_ITEM_COUNT) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
-				}
-				const usageStr = formatUsageStats(r.usage, r.model);
-				const limitStr = formatLimitStats({
-					turnsUsed: r.usage.turns,
-					maxTurns: r.maxTurns,
-					toolCallsUsed: r.toolCallsUsed,
-					maxToolCalls: r.maxToolCalls,
-					durationMs: r.durationMs,
-					maxDurationSeconds: r.maxDurationSeconds,
+				resolvedTasks.push({
+					task: {
+						label: item.label,
+						worker: worker.name,
+						task: item.task,
+						cwd: item.cwd,
+					},
+					worker,
 				});
-				if (usageStr) text += `\n${theme.fg("dim", usageStr)}`;
-				if (limitStr) text += `\n${theme.fg("dim", limitStr)}`;
-				return new Text(text, 0, 0);
 			}
 
-			const aggregateUsage = (results: SingleResult[]) => {
-				const total = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: 0, turns: 0 };
-				for (const r of results) {
-					total.input += r.usage.input;
-					total.output += r.usage.output;
-					total.cacheRead += r.usage.cacheRead;
-					total.cacheWrite += r.usage.cacheWrite;
-					total.cost += r.usage.cost;
-					total.turns += r.usage.turns;
+			const pendingResults: WorkerResult[] = resolvedTasks.map(({ task, worker }, index: number) => ({
+				label: task.label?.trim() || `worker-${index + 1}`,
+				worker: worker.name,
+				task: task.task,
+				cwd: task.cwd || ctx.cwd,
+				exitCode: -1,
+				output: "",
+				error: undefined,
+				durationMs: 0,
+			}));
+			setOrchestratorStatus(ctx, pendingResults);
+
+			try {
+				const results = await mapWithConcurrencyLimit(
+					resolvedTasks,
+					Math.min(MAX_PARALLEL, resolvedTasks.length),
+					(item, index: number) => runWorker(item.task, item.worker, index, ctx.cwd, model, thinking, signal),
+				);
+				setOrchestratorStatus(ctx, results);
+
+				const allSucceeded = results.every((result) => result.exitCode === 0);
+				return {
+					content: [{ type: "text", text: summarizeParallel(results) }],
+					details: { mode: "parallel", results } satisfies ToolDetails,
+					isError: !allSucceeded,
+				};
+			} catch (error: any) {
+				setOrchestratorStatus(ctx);
+				throw error;
+			}
+		},
+
+		renderCall(args, theme) {
+			if (Array.isArray(args.tasks) && args.tasks.length > 0) {
+				const lines = [
+					`${theme.fg("toolTitle", theme.bold("ORCH"))}${theme.fg("border", " ─ ")}${theme.fg("accent", `parallel x${args.tasks.length}`)}`,
+				];
+				for (const task of args.tasks.slice(0, 3)) {
+					const label = task.label || task.worker || "worker";
+					lines.push(`${theme.fg("muted", label)} ${theme.fg("border", "│")} ${theme.fg("accent", task.worker || "worker")} ${theme.fg("border", "│")} ${theme.fg("dim", preview(task.task, 64))}`);
 				}
-				return total;
-			};
-
-			const aggregateLimits = (results: SingleResult[]) => {
-				const total = { turnsUsed: 0, maxTurns: 0, toolCallsUsed: 0, maxToolCalls: 0, durationMs: 0, maxDurationSeconds: 0 };
-				for (const r of results) {
-					total.turnsUsed += r.usage.turns;
-					total.maxTurns += r.maxTurns;
-					total.toolCallsUsed += r.toolCallsUsed;
-					total.maxToolCalls += r.maxToolCalls;
-					total.durationMs += r.durationMs;
-					total.maxDurationSeconds += r.maxDurationSeconds;
-				}
-				return total;
-			};
-
-			if (details.mode === "chain") {
-				const successCount = details.results.filter((r) => r.exitCode === 0).length;
-				const icon = successCount === details.results.length ? theme.fg("success", "✓") : theme.fg("error", "✗");
-
-				if (expanded) {
-					const container = new Container();
-					container.addChild(
-						new Text(
-							icon +
-								" " +
-								theme.fg("toolTitle", theme.bold("chain ")) +
-								theme.fg("accent", `${successCount}/${details.results.length} steps`),
-							0,
-							0,
-						),
-					);
-
-					for (const r of details.results) {
-						const rIcon = r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
-						const displayItems = getDisplayItems(r.messages);
-						const finalOutput = getFinalOutput(r.messages);
-
-						container.addChild(new Spacer(1));
-						container.addChild(
-							new Text(
-								`${theme.fg("muted", `─── Step ${r.step}: `) + theme.fg("accent", r.agent)} ${rIcon}`,
-								0,
-								0,
-							),
-						);
-						container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
-
-						// Show tool calls
-						for (const item of displayItems) {
-							if (item.type === "toolCall") {
-								container.addChild(
-									new Text(
-										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
-										0,
-										0,
-									),
-								);
-							}
-						}
-
-						// Show final output as markdown
-						if (finalOutput) {
-							container.addChild(new Spacer(1));
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
-						}
-
-						const stepUsage = formatUsageStats(r.usage, r.model);
-						const stepLimits = formatLimitStats({
-							turnsUsed: r.usage.turns,
-							maxTurns: r.maxTurns,
-							toolCallsUsed: r.toolCallsUsed,
-							maxToolCalls: r.maxToolCalls,
-							durationMs: r.durationMs,
-							maxDurationSeconds: r.maxDurationSeconds,
-						});
-						if (stepUsage) container.addChild(new Text(theme.fg("dim", stepUsage), 0, 0));
-						if (stepLimits) container.addChild(new Text(theme.fg("dim", stepLimits), 0, 0));
-					}
-
-					const usageStr = formatUsageStats(aggregateUsage(details.results));
-					const limitStr = formatLimitStats(aggregateLimits(details.results));
-					if (usageStr || limitStr) {
-						container.addChild(new Spacer(1));
-						if (usageStr) container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
-						if (limitStr) container.addChild(new Text(theme.fg("dim", `Total: ${limitStr}`), 0, 0));
-					}
-					return container;
-				}
-
-				// Collapsed view
-				let text =
-					icon +
-					" " +
-					theme.fg("toolTitle", theme.bold("chain ")) +
-					theme.fg("accent", `${successCount}/${details.results.length} steps`);
-				for (const r of details.results) {
-					const rIcon = r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
-					const displayItems = getDisplayItems(r.messages);
-					text += `\n\n${theme.fg("muted", `─── Step ${r.step}: `)}${theme.fg("accent", r.agent)} ${rIcon}`;
-					if (displayItems.length === 0) text += `\n${theme.fg("muted", "(no output)")}`;
-					else text += `\n${renderDisplayItems(displayItems, 5)}`;
-				}
-				const usageStr = formatUsageStats(aggregateUsage(details.results));
-				const limitStr = formatLimitStats(aggregateLimits(details.results));
-				if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`;
-				if (limitStr) text += `\n${theme.fg("dim", `Total: ${limitStr}`)}`;
-				text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
-				return new Text(text, 0, 0);
+				if (args.tasks.length > 3) lines.push(theme.fg("muted", `... +${args.tasks.length - 3} more`));
+				return new Text(lines.join("\n"), 0, 0);
 			}
 
-			if (details.mode === "parallel") {
-				const running = details.results.filter((r) => r.exitCode === -1).length;
-				const successCount = details.results.filter((r) => r.exitCode === 0).length;
-				const failCount = details.results.filter((r) => r.exitCode > 0).length;
-				const isRunning = running > 0;
-				const icon = isRunning
-					? theme.fg("warning", "⏳")
-					: failCount > 0
-						? theme.fg("warning", "◐")
-						: theme.fg("success", "✓");
-				const status = isRunning
-					? `${successCount + failCount}/${details.results.length} done, ${running} running`
-					: `${successCount}/${details.results.length} tasks`;
+			return new Text(
+				[
+					`${theme.fg("toolTitle", theme.bold("ORCH"))}${theme.fg("border", " ─ ")}${theme.fg("accent", args.worker || "worker")}`,
+					`${theme.fg("muted", "task")} ${theme.fg("border", "│")} ${theme.fg("dim", preview(args.task || "", 84))}`,
+				].join("\n"),
+				0,
+				0,
+			);
+		},
 
-				if (expanded && !isRunning) {
-					const container = new Container();
-					container.addChild(
-						new Text(
-							`${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`,
-							0,
-							0,
-						),
-					);
-
-					for (const r of details.results) {
-						const rIcon = r.exitCode === 0 ? theme.fg("success", "✓") : theme.fg("error", "✗");
-						const displayItems = getDisplayItems(r.messages);
-						const finalOutput = getFinalOutput(r.messages);
-
-						container.addChild(new Spacer(1));
-						container.addChild(
-							new Text(`${theme.fg("muted", "─── ") + theme.fg("accent", r.agent)} ${rIcon}`, 0, 0),
-						);
-						container.addChild(new Text(theme.fg("muted", "Task: ") + theme.fg("dim", r.task), 0, 0));
-
-						// Show tool calls
-						for (const item of displayItems) {
-							if (item.type === "toolCall") {
-								container.addChild(
-									new Text(
-										theme.fg("muted", "→ ") + formatToolCall(item.name, item.args, theme.fg.bind(theme)),
-										0,
-										0,
-									),
-								);
-							}
-						}
-
-						// Show final output as markdown
-						if (finalOutput) {
-							container.addChild(new Spacer(1));
-							container.addChild(new Markdown(finalOutput.trim(), 0, 0, mdTheme));
-						}
-
-						const taskUsage = formatUsageStats(r.usage, r.model);
-						const taskLimits = formatLimitStats({
-							turnsUsed: r.usage.turns,
-							maxTurns: r.maxTurns,
-							toolCallsUsed: r.toolCallsUsed,
-							maxToolCalls: r.maxToolCalls,
-							durationMs: r.durationMs,
-							maxDurationSeconds: r.maxDurationSeconds,
-						});
-						if (taskUsage) container.addChild(new Text(theme.fg("dim", taskUsage), 0, 0));
-						if (taskLimits) container.addChild(new Text(theme.fg("dim", taskLimits), 0, 0));
-					}
-
-					const usageStr = formatUsageStats(aggregateUsage(details.results));
-					const limitStr = formatLimitStats(aggregateLimits(details.results));
-					if (usageStr || limitStr) {
-						container.addChild(new Spacer(1));
-						if (usageStr) container.addChild(new Text(theme.fg("dim", `Total: ${usageStr}`), 0, 0));
-						if (limitStr) container.addChild(new Text(theme.fg("dim", `Total: ${limitStr}`), 0, 0));
-					}
-					return container;
-				}
-
-				// Collapsed view (or still running)
-				let text = `${icon} ${theme.fg("toolTitle", theme.bold("parallel "))}${theme.fg("accent", status)}`;
-				for (const r of details.results) {
-					const rIcon =
-						r.exitCode === -1
-							? theme.fg("warning", "⏳")
-							: r.exitCode === 0
-								? theme.fg("success", "✓")
-								: theme.fg("error", "✗");
-					const displayItems = getDisplayItems(r.messages);
-					text += `\n\n${theme.fg("muted", "─── ")}${theme.fg("accent", r.agent)} ${rIcon}`;
-					if (displayItems.length === 0)
-						text += `\n${theme.fg("muted", r.exitCode === -1 ? "(running...)" : "(no output)")}`;
-					else text += `\n${renderDisplayItems(displayItems, 5)}`;
-				}
-				if (!isRunning) {
-					const usageStr = formatUsageStats(aggregateUsage(details.results));
-					const limitStr = formatLimitStats(aggregateLimits(details.results));
-					if (usageStr) text += `\n\n${theme.fg("dim", `Total: ${usageStr}`)}`;
-					if (limitStr) text += `\n${theme.fg("dim", `Total: ${limitStr}`)}`;
-				}
-				if (!expanded) text += `\n${theme.fg("muted", "(Ctrl+O to expand)")}`;
-				return new Text(text, 0, 0);
+		renderResult(result, _context, theme) {
+			const details = result.details as ToolDetails | undefined;
+			if (!details || details.results.length === 0) {
+				const first = result.content[0];
+				return new Text(first?.type === "text" ? first.text : "(no output)", 0, 0);
 			}
 
-			const text = result.content[0];
-			return new Text(text?.type === "text" ? text.text : "(no output)", 0, 0);
+			if (details.mode === "single") {
+				const worker = details.results[0];
+				return new Text(
+					[
+						`${theme.fg("toolTitle", theme.bold("WORKER"))}${theme.fg("border", " ─ ")}${theme.fg("accent", worker.label)}`,
+						renderWorkerSummary(theme, worker),
+						theme.fg(worker.exitCode === 0 ? "text" : "error", preview(worker.error || worker.output, 220)),
+					].join("\n"),
+					0,
+					0,
+				);
+			}
+
+			const total = details.results.length;
+			const succeeded = details.results.filter((worker) => worker.exitCode === 0).length;
+			const lines = [
+				`${theme.fg("toolTitle", theme.bold("ORCH"))}${theme.fg("border", " ─ ")}${theme.fg("accent", `parallel ${succeeded}/${total}`)}`,
+			];
+			for (const worker of details.results) {
+				lines.push(renderWorkerSummary(theme, worker));
+				lines.push(theme.fg("dim", preview(worker.error || worker.output, 160)));
+			}
+			return new Text(lines.join("\n"), 0, 0);
 		},
 	});
 }
