@@ -7,7 +7,7 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 } from "@mariozechner/pi-coding-agent";
-import { Key, matchesKey, Text, truncateToWidth } from "@mariozechner/pi-tui";
+import { Key, matchesKey, Text, truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
 import { Type } from "@sinclair/typebox";
 
 const WORKER_BYPASS_ENV = "PI_SUBAGENT_WORKER";
@@ -29,6 +29,10 @@ const RECENT_WIDGET_WINDOW_MS = 10 * 60 * 1000;
 const MAX_PERSISTED_TIMELINE_ENTRIES = 8;
 const MAX_PERSISTED_OUTPUT_CHARS = 6000;
 const MAX_PERSISTED_TASK_CHARS = 600;
+const MONITOR_OVERLAY_MAX_HEIGHT = 24;
+const LIST_PANEL_VISIBLE_ROWS = 10;
+const DETAIL_MIN_SCROLL_ROWS = 6;
+const DETAIL_PAGE_STEP = 8;
 
 type UiContext = ExtensionContext | ExtensionCommandContext;
 
@@ -311,6 +315,10 @@ function formatAge(timestamp: number | undefined): string {
 	return formatDuration(delta);
 }
 
+function clampNumber(value: number, min: number, max: number): number {
+	return Math.min(max, Math.max(min, value));
+}
+
 function formatStatusSummary(results: WorkerResult[]): string {
 	if (results.length === 0) return "orch ready";
 	const total = results.length;
@@ -427,6 +435,18 @@ function sortMonitorRuns() {
 	monitorState.runs.sort((a, b) => b.updatedAt - a.updatedAt);
 }
 
+function getRunStartSequence(result: WorkerResult): number {
+	const suffix = Number.parseInt(result.runId.split("-").pop() || "", 10);
+	return Number.isFinite(suffix) ? suffix : 0;
+}
+
+function compareRunsByStartOrder(a: WorkerResult, b: WorkerResult): number {
+	if (a.startedAt !== b.startedAt) return a.startedAt - b.startedAt;
+	const sequenceDelta = getRunStartSequence(a) - getRunStartSequence(b);
+	if (sequenceDelta !== 0) return sequenceDelta;
+	return a.updatedAt - b.updatedAt;
+}
+
 function pruneMonitorRuns() {
 	if (monitorState.runs.length > MAX_RUN_HISTORY) {
 		monitorState.runs = monitorState.runs.slice(0, MAX_RUN_HISTORY);
@@ -436,6 +456,16 @@ function pruneMonitorRuns() {
 function getSortedRuns() {
 	sortMonitorRuns();
 	return monitorState.runs;
+}
+
+function getOverlayRuns() {
+	return [...monitorState.runs].sort(compareRunsByStartOrder);
+}
+
+function getInitialOverlaySelection(runs: WorkerResult[]): string | undefined {
+	if (runs.length === 0) return undefined;
+	const firstActive = runs.find((run) => run.exitCode === -1);
+	return firstActive?.runId || runs[runs.length - 1]?.runId;
 }
 
 function getActiveRuns() {
@@ -660,79 +690,168 @@ function renderTimelineLine(theme: any, entry: WorkerTimelineEntry, width: numbe
 	return truncateToWidth(line, width);
 }
 
+function padPanelLine(text: string, width: number): string {
+	return truncateToWidth(text, width, "...", true);
+}
+
+function framePanel(theme: any, width: number, title: string, lines: string[]): string[] {
+	const innerWidth = Math.max(24, width - 2);
+	const border = (text: string) => theme.fg("border", text);
+	const titleLabel = truncateToWidth(` ${title} `, innerWidth);
+	const titleFill = Math.max(0, innerWidth - visibleWidth(titleLabel));
+	const framed = [border("╭") + theme.fg("toolTitle", theme.bold(titleLabel)) + border(`${"─".repeat(titleFill)}╮`)];
+
+	for (const line of lines) {
+		framed.push(border("│") + padPanelLine(line, innerWidth) + border("│"));
+	}
+
+	framed.push(border(`╰${"─".repeat(innerWidth)}╯`));
+	return framed;
+}
+
+function buildFooterBar(theme: any, width: number, left: string, right: string): string {
+	const leftWidth = visibleWidth(left);
+	const rightWidth = visibleWidth(right);
+	if (leftWidth === 0) return truncateToWidth(right, width, "...", true);
+	if (rightWidth === 0) return truncateToWidth(left, width, "...", true);
+	if (leftWidth + 1 + rightWidth <= width) {
+		return `${left}${" ".repeat(Math.max(1, width - leftWidth - rightWidth))}${right}`;
+	}
+
+	const reservedRight = Math.min(rightWidth, Math.max(12, Math.floor(width * 0.45)));
+	const leftBudget = Math.max(0, width - reservedRight - 1);
+	const leftText = truncateToWidth(left, leftBudget);
+	const rightText = truncateToWidth(right, Math.max(0, width - visibleWidth(leftText) - 1));
+	return truncateToWidth(`${leftText} ${rightText}`, width, "...", true);
+}
+
+function getVisibleRunWindow(runs: WorkerResult[], selectedRunId: string | undefined, maxVisible: number) {
+	if (runs.length <= maxVisible) {
+		return {
+			start: 0,
+			end: runs.length,
+			selectedIndex: selectedRunId ? runs.findIndex((run) => run.runId === selectedRunId) : 0,
+			visible: runs,
+		};
+	}
+
+	const selectedIndex = Math.max(0, runs.findIndex((run) => run.runId === selectedRunId));
+	const half = Math.floor(maxVisible / 2);
+	const maxStart = Math.max(0, runs.length - maxVisible);
+	const start = Math.min(Math.max(0, selectedIndex - half), maxStart);
+	const end = Math.min(runs.length, start + maxVisible);
+	return {
+		start,
+		end,
+		selectedIndex,
+		visible: runs.slice(start, end),
+	};
+}
+
 function buildListPanelLines(theme: any, width: number, runs: WorkerResult[], selectedRunId: string | undefined): string[] {
+	const innerWidth = Math.max(24, width - 2);
 	const lines: string[] = [];
-	lines.push(truncateToWidth(`${theme.fg("toolTitle", theme.bold("ORCH MONITOR"))} ${theme.fg("muted", "// current and recent worker runs")}`, width));
-	lines.push(truncateToWidth(`${theme.fg("muted", "running")} ${theme.fg("text", String(runs.filter((run) => run.exitCode === -1).length))}   ${theme.fg("muted", "history")} ${theme.fg("text", String(runs.length))}`, width));
+	lines.push(truncateToWidth(`${theme.fg("accent", "list view")} ${theme.fg("border", "│")} ${theme.fg("muted", `${runs.filter((run) => run.exitCode === -1).length} live`)} ${theme.fg("border", "│")} ${theme.fg("muted", `${runs.length} tracked`)}`, innerWidth));
+	lines.push(truncateToWidth(theme.fg("dim", "Inspect a worker run to follow timeline, active tool, and live/final output."), innerWidth));
 	lines.push("");
 
 	if (runs.length === 0) {
-		lines.push(truncateToWidth(theme.fg("dim", "No worker runs yet."), width));
+		lines.push(truncateToWidth(theme.fg("dim", "No worker runs yet."), innerWidth));
 		lines.push("");
-		lines.push(truncateToWidth(theme.fg("dim", "Esc closes"), width));
-		return lines;
+		lines.push(buildFooterBar(theme, innerWidth, "", theme.fg("dim", "Esc close")));
+		return framePanel(theme, width, "ORCH MONITOR", lines);
 	}
 
-	const visible = runs.slice(0, 10);
-	for (const run of visible) {
+	const windowed = getVisibleRunWindow(runs, selectedRunId, LIST_PANEL_VISIBLE_ROWS);
+	for (const run of windowed.visible) {
 		const selected = run.runId === selectedRunId;
-		const marker = selected ? theme.fg("accent", "›") : theme.fg("dim", " ");
+		const marker = selected ? theme.fg("accent", "›") : theme.fg("dim", "·");
 		const workerTag = run.label !== run.worker ? `${run.label} (${run.worker})` : run.label;
 		const summary = summarizeRun(run, 72);
+		const summaryColor = selected ? "text" : "dim";
 		lines.push(
 			truncateToWidth(
-				`${marker} ${renderWorkerStatusToken(theme, run)} ${theme.fg("accent", workerTag)} ${theme.fg("border", "│")} ${theme.fg("muted", formatDuration(run.durationMs))} ${theme.fg("border", "│")} ${theme.fg("dim", summary)}`,
-				width,
+				`${marker} ${renderWorkerStatusToken(theme, run)} ${theme.fg("accent", workerTag)} ${theme.fg("border", "│")} ${theme.fg("muted", formatDuration(run.durationMs))} ${theme.fg("border", "│")} ${theme.fg(summaryColor, summary)}`,
+				innerWidth,
 			),
 		);
 	}
-	if (runs.length > visible.length) {
-		lines.push(truncateToWidth(theme.fg("muted", `... +${runs.length - visible.length} more runs`), width));
-	}
-
 	lines.push("");
-	lines.push(truncateToWidth(theme.fg("dim", "Up/Down select · Enter drill · Esc close"), width));
-	return lines;
+	const listStatus =
+		runs.length > windowed.visible.length
+			? theme.fg("muted", `showing ${windowed.start + 1}-${windowed.end}/${runs.length}`)
+			: theme.fg("muted", `selected ${windowed.selectedIndex + 1}/${runs.length}`);
+	lines.push(buildFooterBar(theme, innerWidth, listStatus, theme.fg("dim", "↑↓ move  Enter open  Esc close")));
+	return framePanel(theme, width, "ORCH MONITOR", lines);
 }
 
-function buildDetailPanelLines(theme: any, width: number, run: WorkerResult): string[] {
-	const lines: string[] = [];
+function buildDetailPanelLines(theme: any, width: number, run: WorkerResult, scrollOffset: number): { lines: string[]; maxScrollOffset: number } {
+	const innerWidth = Math.max(24, width - 2);
 	const statusWord = run.exitCode === -1 ? "running" : run.exitCode === 0 ? "completed" : "failed";
 	const source = run.error || run.output || run.liveText || "(no output yet)";
-	const bodyLines = wrapPlainText(source, Math.max(18, width - 4), 5);
+	const taskLines = wrapPlainText(run.task, Math.max(18, innerWidth - 4), 2);
+	const headerLines: string[] = [];
 
-	lines.push(truncateToWidth(`${theme.fg("toolTitle", theme.bold("WORKER DETAIL"))} ${theme.fg("muted", "// timeline and output")}`, width));
-	lines.push(
+	headerLines.push(
 		truncateToWidth(
 			`${renderWorkerStatusToken(theme, run)} ${theme.fg("accent", run.label)} ${run.label !== run.worker ? theme.fg("muted", `(${run.worker})`) : ""} ${theme.fg("border", "│")} ${theme.fg("text", statusWord)} ${theme.fg("border", "│")} ${theme.fg("dim", formatDuration(run.durationMs))}`,
-			width,
+			innerWidth,
 		),
 	);
-	lines.push(truncateToWidth(`${theme.fg("muted", "cwd")} ${theme.fg("text", formatPathLabel(run.cwd, Math.max(24, width - 10)))}`, width));
-	lines.push(truncateToWidth(`${theme.fg("muted", "task")} ${theme.fg("text", preview(run.task, Math.max(32, width - 10)))}`, width));
+	headerLines.push(truncateToWidth(`${theme.fg("muted", "cwd")} ${theme.fg("text", formatPathLabel(run.cwd, Math.max(24, innerWidth - 10)))}`, innerWidth));
+	headerLines.push(truncateToWidth(`${theme.fg("muted", "updated")} ${theme.fg("dim", formatAge(run.updatedAt))} ${theme.fg("border", "│")} ${theme.fg("muted", "started")} ${theme.fg("dim", formatClock(run.startedAt))}`, innerWidth));
+	headerLines.push(truncateToWidth(theme.fg("muted", "task"), innerWidth));
+	for (const line of taskLines) {
+		headerLines.push(truncateToWidth(`  ${theme.fg("text", line)}`, innerWidth));
+	}
 	if (run.activeTool) {
-		lines.push(truncateToWidth(`${theme.fg("muted", "active")} ${theme.fg("warning", run.activeTool)}`, width));
+		headerLines.push(truncateToWidth(`${theme.fg("muted", "active")} ${theme.fg("warning", run.activeTool)}`, innerWidth));
 	}
-	lines.push("");
-	lines.push(truncateToWidth(theme.fg("muted", "timeline"), width));
-	for (const entry of run.timeline.slice(-8)) {
-		lines.push(renderTimelineLine(theme, entry, width));
+
+	const scrollableLines: string[] = [];
+	scrollableLines.push(truncateToWidth(theme.fg("muted", "timeline"), innerWidth));
+	for (const entry of run.timeline) {
+		scrollableLines.push(renderTimelineLine(theme, entry, innerWidth));
 	}
-	lines.push("");
-	lines.push(truncateToWidth(theme.fg("muted", run.exitCode === -1 ? "live text" : run.error ? "error" : "final output"), width));
-	for (const line of bodyLines) {
-		lines.push(truncateToWidth(`  ${theme.fg(run.error ? "error" : "text", line)}`, width));
+	scrollableLines.push("");
+	scrollableLines.push(truncateToWidth(theme.fg("muted", run.exitCode === -1 ? "live text" : run.error ? "error" : "final output"), innerWidth));
+	for (const line of wrapPlainText(source, Math.max(18, innerWidth - 4), Number.MAX_SAFE_INTEGER)) {
+		scrollableLines.push(truncateToWidth(`  ${theme.fg(run.error ? "error" : "text", line)}`, innerWidth));
 	}
-	lines.push("");
-	lines.push(truncateToWidth(theme.fg("dim", "Left/Esc back · Up/Down switch worker"), width));
-	return lines;
+
+	const visibleScrollRows = Math.max(DETAIL_MIN_SCROLL_ROWS, MONITOR_OVERLAY_MAX_HEIGHT - 2 - headerLines.length - 1);
+	const maxScrollOffset = Math.max(0, scrollableLines.length - visibleScrollRows);
+	const clampedOffset = clampNumber(scrollOffset, 0, maxScrollOffset);
+	const visibleScrollLines = scrollableLines.slice(clampedOffset, clampedOffset + visibleScrollRows);
+	const lines = [...headerLines, ...visibleScrollLines];
+
+	while (lines.length < headerLines.length + visibleScrollRows) {
+		lines.push("");
+	}
+
+	const scrollRangeStart = scrollableLines.length === 0 ? 0 : clampedOffset + 1;
+	const scrollRangeEnd = Math.min(scrollableLines.length, clampedOffset + visibleScrollRows);
+	const detailStatus = theme.fg(
+		"muted",
+		maxScrollOffset > 0 ? `body ${scrollRangeStart}-${scrollRangeEnd}/${scrollableLines.length}` : `body ${scrollableLines.length} lines`,
+	);
+	lines.push(
+		buildFooterBar(theme, innerWidth, detailStatus, theme.fg("dim", "↑↓ scroll  PgUp/PgDn page  [ ] worker  Esc back")),
+	);
+
+	return {
+		lines: framePanel(theme, width, "WORKER DETAIL", lines),
+		maxScrollOffset,
+	};
 }
 
 async function showMonitorOverlay(ctx: UiContext) {
 	if (!ctx.hasUI) return;
 
 	let mode: "list" | "detail" = "list";
-	let selectedRunId = getSortedRuns()[0]?.runId;
+	let selectedRunId = getInitialOverlaySelection(getOverlayRuns());
+	let detailScrollOffset = 0;
+	let lastRenderWidth = 96;
 
 	function resolveSelection(runs: WorkerResult[]) {
 		if (runs.length === 0) {
@@ -748,7 +867,7 @@ async function showMonitorOverlay(ctx: UiContext) {
 	await ctx.ui.custom(
 		(tui, theme, _keybindings, done) => {
 			const unsubscribe = subscribeMonitor(() => {
-				resolveSelection(getSortedRuns());
+				resolveSelection(getOverlayRuns());
 				tui.requestRender();
 			});
 
@@ -758,29 +877,69 @@ async function showMonitorOverlay(ctx: UiContext) {
 				},
 				invalidate() {},
 				render(width: number) {
-					const runs = getSortedRuns();
+					lastRenderWidth = width;
+					const runs = getOverlayRuns();
 					const selected = resolveSelection(runs);
-					if (mode === "detail" && selected) return buildDetailPanelLines(theme, width, selected);
+					if (mode === "detail" && selected) {
+						const detailView = buildDetailPanelLines(theme, width, selected, detailScrollOffset);
+						detailScrollOffset = clampNumber(detailScrollOffset, 0, detailView.maxScrollOffset);
+						return detailView.lines;
+					}
 					return buildListPanelLines(theme, width, runs, selectedRunId);
 				},
 				handleInput(data: string) {
-					const runs = getSortedRuns();
+					const runs = getOverlayRuns();
 					const selected = resolveSelection(runs);
 					const index = selected ? runs.findIndex((run) => run.runId === selected.runId) : -1;
 
 					if (mode === "detail") {
 						if (matchesKey(data, Key.left) || matchesKey(data, Key.escape) || matchesKey(data, Key.backspace)) {
 							mode = "list";
+							detailScrollOffset = 0;
 							tui.requestRender();
 							return;
 						}
-						if (matchesKey(data, Key.up) && index > 0) {
+						if (!selected) return;
+						const detailView = buildDetailPanelLines(theme, lastRenderWidth, selected, detailScrollOffset);
+						if (matchesKey(data, Key.up) && detailScrollOffset > 0) {
+							detailScrollOffset -= 1;
+							tui.requestRender();
+							return;
+						}
+						if (matchesKey(data, Key.down) && detailScrollOffset < detailView.maxScrollOffset) {
+							detailScrollOffset += 1;
+							tui.requestRender();
+							return;
+						}
+						if (matchesKey(data, Key.pageUp) && detailScrollOffset > 0) {
+							detailScrollOffset = Math.max(0, detailScrollOffset - DETAIL_PAGE_STEP);
+							tui.requestRender();
+							return;
+						}
+						if (matchesKey(data, Key.pageDown) && detailScrollOffset < detailView.maxScrollOffset) {
+							detailScrollOffset = Math.min(detailView.maxScrollOffset, detailScrollOffset + DETAIL_PAGE_STEP);
+							tui.requestRender();
+							return;
+						}
+						if (matchesKey(data, Key.home) && detailScrollOffset !== 0) {
+							detailScrollOffset = 0;
+							tui.requestRender();
+							return;
+						}
+						if (matchesKey(data, Key.end) && detailScrollOffset !== detailView.maxScrollOffset) {
+							detailScrollOffset = detailView.maxScrollOffset;
+							tui.requestRender();
+							return;
+						}
+						if ((matchesKey(data, Key.leftbracket) || matchesKey(data, Key.ctrl("p"))) && index > 0) {
 							selectedRunId = runs[index - 1].runId;
+							detailScrollOffset = 0;
 							tui.requestRender();
 							return;
 						}
-						if (matchesKey(data, Key.down) && index >= 0 && index < runs.length - 1) {
+						if ((matchesKey(data, Key.rightbracket) || matchesKey(data, Key.ctrl("n"))) && index >= 0 && index < runs.length - 1) {
 							selectedRunId = runs[index + 1].runId;
+							detailScrollOffset = 0;
 							tui.requestRender();
 							return;
 						}
@@ -791,33 +950,34 @@ async function showMonitorOverlay(ctx: UiContext) {
 						done(undefined);
 						return;
 					}
-					if (matchesKey(data, Key.up) && index > 0) {
-						selectedRunId = runs[index - 1].runId;
-						tui.requestRender();
-						return;
-					}
-					if (matchesKey(data, Key.down) && index >= 0 && index < runs.length - 1) {
-						selectedRunId = runs[index + 1].runId;
-						tui.requestRender();
-						return;
-					}
-					if ((matchesKey(data, Key.enter) || matchesKey(data, Key.right)) && selected) {
-						mode = "detail";
-						tui.requestRender();
-					}
+						if (matchesKey(data, Key.up) && index > 0) {
+							selectedRunId = runs[index - 1].runId;
+							tui.requestRender();
+							return;
+						}
+						if (matchesKey(data, Key.down) && index >= 0 && index < runs.length - 1) {
+							selectedRunId = runs[index + 1].runId;
+							tui.requestRender();
+							return;
+						}
+						if ((matchesKey(data, Key.enter) || matchesKey(data, Key.right)) && selected) {
+							mode = "detail";
+							detailScrollOffset = 0;
+							tui.requestRender();
+						}
+					},
+					};
 				},
-			};
-		},
-		{
-			overlay: true,
-			overlayOptions: {
-				anchor: "center",
-				width: 96,
-				minWidth: 72,
-				maxHeight: 24,
-				margin: 1,
-				offsetY: -1,
-			},
+			{
+				overlay: true,
+				overlayOptions: {
+					anchor: "center",
+					width: 96,
+					minWidth: 72,
+					maxHeight: MONITOR_OVERLAY_MAX_HEIGHT,
+					margin: 1,
+					offsetY: -1,
+				},
 		},
 	);
 }
