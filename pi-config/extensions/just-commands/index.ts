@@ -21,7 +21,6 @@ const MESSAGE_TYPE = "just-command-output";
 const STATUS_ID = "just-commands";
 const CANDIDATE_JUSTFILES = ["justfile", ".justfile", "Justfile"] as const;
 const COMMAND_PREFIX = "just-";
-const AUTO_REFRESH = true;
 const WATCH_DEBOUNCE_MS = 500;
 const CONFIG_PATH = join(homedir(), ".pi", "agent", "extensions", "just-commands", "config.json");
 const JUST_JSON_DUMP_CANDIDATES = [
@@ -50,7 +49,6 @@ const BUILTIN_RESERVED = new Set([
 
 const UTILITY_COMMANDS = new Set([
 	"just-recipes",
-	"just-refresh",
 	"just-watch",
 	"just-which",
 	"just-hide",
@@ -766,28 +764,7 @@ export default function justCommandsExtension(pi: ExtensionAPI) {
 		for (const [dir, basenames] of watchedDirBasenames) watchDirectory(dir, basenames);
 	}
 
-	async function tryQueueRefresh(reason: string) {
-		if (!AUTO_REFRESH || runtime.refreshQueued) return;
-		runtime.refreshQueued = true;
-		runtime.lastRefreshReason = reason;
-		await emitMessage("Detected a justfile change", {
-			kind: "info",
-			status: "info",
-			lines: ["Pi is refreshing slash-command mappings automatically.", `Reason: ${reason}`],
-		});
-
-		try {
-			pi.sendUserMessage("/just-refresh", { deliverAs: "followUp" });
-		} catch {
-			try {
-				pi.sendUserMessage("/just-refresh");
-			} catch {
-				runtime.refreshQueued = false;
-			}
-		}
-	}
-
-	async function handleRescan(reason: string) {
+	async function handleRescan(_reason: string) {
 		const next = await discoverRegistry(runtime.cwd);
 		const previous = runtime.registry;
 		const changed =
@@ -804,12 +781,11 @@ export default function justCommandsExtension(pi: ExtensionAPI) {
 			await emitMessage("justfile scan failed", {
 				kind: "info",
 				status: "error",
-				lines: [next.scanError, "Current slash-command mappings were not reloaded yet."],
+				lines: [next.scanError, "Current slash-command list may be stale until /reload."],
 			});
 			return;
 		}
 
-		await tryQueueRefresh(reason);
 	}
 
 	function scheduleRescan(reason: string) {
@@ -879,16 +855,6 @@ export default function justCommandsExtension(pi: ExtensionAPI) {
 				return msg.customType !== MESSAGE_TYPE;
 			}),
 		};
-	});
-
-	pi.registerCommand("just-refresh", {
-		description: "Reload slash commands from the nearest justfile",
-		handler: async (_args, ctx) => {
-			runtime.refreshQueued = false;
-			runtime.lastRefreshReason = undefined;
-			await ctx.reload();
-			return;
-		},
 	});
 
 	if (runtime.hideRecipeCommands) {
