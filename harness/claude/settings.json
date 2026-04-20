@@ -10,7 +10,6 @@
     "commit": "",
     "pr": ""
   },
-  "model": "opus",
   "enableAllProjectMcpServers": true,
   "hooks": {
     "PreToolUse": [
@@ -147,6 +146,7 @@
   },
   "effortLevel": "medium",
   "autoCompactWindow": 200000,
+  "skipDangerousModePermissionPrompt": true,
   "voiceEnabled": true,
-  "skipDangerousModePermissionPrompt": true
+  "skipAutoPermissionPrompt": true
 }

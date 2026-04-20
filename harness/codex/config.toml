@@ -1,5 +1,7 @@
 # Codex CLI global config
 # Docs: https://developers.openai.com/codex/config-reference
 # Symlinked from ~/dev/ai via install.sh
+# Keep project-specific MCP servers out of this file.
+# Put them in the target repo's .codex/config.toml instead.
 
 model = "o3"

@@ -1,7 +1,10 @@
 {
-  "lastChangelogVersion": "0.67.1",
+  "lastChangelogVersion": "0.67.68",
   "defaultProvider": "openai-codex",
   "defaultModel": "gpt-5.4",
   "defaultThinkingLevel": "xhigh",
-  "theme": "schematic-amber"
+  "theme": "schematic-amber",
+  "extensions": [
+    "-extensions/delegated-subagents/index.ts"
+  ]
 }

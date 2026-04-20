@@ -537,14 +537,14 @@ export default function stabilityExtension(pi: ExtensionAPI) {
 				},
 				invalidate() {},
 			}),
-			{ placement: "belowEditor" },
+			{ placement: "aboveEditor" },
 		);
 	}
 
 	function refreshChrome(ctx: ExtensionContext) {
 		updatePhase(ctx);
 		if (ctx.hasUI) {
-			ctx.ui.setStatus(STATUS_ID, shouldShowWidget(state) ? undefined : buildStatusLine(state, ctx));
+			ctx.ui.setStatus(STATUS_ID, buildStatusLine(state, ctx));
 			mountWidget(ctx);
 		}
 	}
