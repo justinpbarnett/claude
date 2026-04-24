@@ -49,7 +49,7 @@ install_codex() {
     echo "  Target: $target"
     mkdir -p "$target"
 
-    link "$REPO_DIR/skills"                          "$target/skills"
+    link_children "$REPO_DIR/skills"                 "$target/skills"
     link "$REPO_DIR/agents"                          "$target/agents"
     link "$REPO_DIR/AGENTS.md"                       "$target/AGENTS.md"
     link "$REPO_DIR/harness/codex/config.toml"       "$target/config.toml"
@@ -84,6 +84,46 @@ link() {
 
     ln -s "$source" "$target"
     echo "    LINK $name -> $source"
+}
+
+link_children() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local name
+    local target
+    local backup_dir=""
+    local timestamp
+
+    timestamp="$(date +%Y%m%d%H%M%S)"
+
+    if [ ! -d "$source_dir" ]; then
+        echo "    SKIP $(basename "$target_dir") (not in repo)"
+        return
+    fi
+
+    mkdir -p "$target_dir"
+
+    for source in "$source_dir"/*; do
+        [ -e "$source" ] || continue
+        name="$(basename "$source")"
+        target="$target_dir/$name"
+
+        if [ -e "$target" ] && [ ! -L "$target" ]; then
+            if [ -z "$backup_dir" ]; then
+                backup_dir="$(dirname "$target_dir")/$(basename "$target_dir").bak.$timestamp"
+                mkdir -p "$backup_dir"
+            fi
+            echo "    BACKUP $name -> $backup_dir/$name"
+            mv "$target" "$backup_dir/$name"
+        fi
+
+        if [ -L "$target" ]; then
+            rm "$target"
+        fi
+
+        ln -s "$source" "$target"
+        echo "    LINK $name -> $source"
+    done
 }
 
 usage() {
