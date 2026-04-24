@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
+import type { AgentToolUpdateCallback, ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -139,22 +139,6 @@ class ScrapeAttemptError extends Error {
 
 export default function webScrapeExtension(pi: ExtensionAPI) {
 	const detectedChromiumPath = detectChromiumPath();
-
-	pi.registerCommand("scrape-status", {
-		description: "Show scrape tool configuration and runtime status",
-		handler: async (_args, ctx) => {
-			const tls = getTierTlsConfig();
-			const lines = [
-				`tool: ${TOOL_NAME}`,
-				`env file: ${existsSync(EXTENSION_ENV_PATH) ? EXTENSION_ENV_PATH : "not found"}`,
-				`tls mode: ${tls.insecure ? "insecure" : tls.caCertPath ? `custom CA (${tls.caCertPath})` : "system trust"}`,
-				`bright data: ${getBrightDataApiToken() ? "configured" : "not configured"}`,
-				`bright data zone: ${getBrightDataZone()}`,
-				`chromium path: ${detectedChromiumPath ?? "not detected"}`,
-			];
-			ctx.ui.notify(lines.join("\n"), "info");
-		},
-	});
 
 	pi.registerTool({
 		name: TOOL_NAME,
@@ -413,12 +397,10 @@ function getConfiguredEnv(name: string): string | undefined {
 }
 
 function publishUpdate(
-	onUpdate:
-		| ((partial: { content: Array<{ type: "text"; text: string }>; details?: Record<string, unknown> }) => void)
-		| undefined,
+	onUpdate: AgentToolUpdateCallback<unknown> | undefined,
 	text: string,
 ) {
-	onUpdate?.({ content: [{ type: "text", text }] });
+	onUpdate?.({ content: [{ type: "text", text }], details: {} });
 }
 
 function detectChromiumPath(): string | undefined {

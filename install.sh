@@ -27,10 +27,10 @@ install_forge() {
     echo "  Target: $target"
     mkdir -p "$target"
 
-    link "$REPO_DIR/skills"                     "$target/skills"
-    link "$REPO_DIR/agents"                     "$target/agents"
-    link "$REPO_DIR/AGENTS.md"                  "$target/AGENTS.md"
-    link "$REPO_DIR/harness/forge/.forge.toml"  "$target/.forge.toml"
+    link "$REPO_DIR/skills"                           "$target/skills"
+    link "$REPO_DIR/harness/forge/agents"             "$target/agents"
+    link "$REPO_DIR/AGENTS.md"                        "$target/AGENTS.md"
+    link "$REPO_DIR/harness/forge/.forge.toml"        "$target/.forge.toml"
 }
 
 install_opencode() {

@@ -14,16 +14,16 @@ target = "~/.claude"
 supports_hooks = true
 supports_plugins = true
 supports_rules = true
-guidelines_file = "CLAUDE.md"     # Claude reads CLAUDE.md, not AGENTS.md
-config_format = "json"            # settings.json
+guidelines_file = "CLAUDE.md" # Claude reads CLAUDE.md, not AGENTS.md
+config_format = "json"        # settings.json
 
 [claude.symlinks]
-skills       = "skills"
-agents       = "agents"
-hooks        = "hooks"
-rules        = "rules"
-plugins      = "plugins"
-"CLAUDE.md"  = "AGENTS.md"       # Our shared AGENTS.md → their CLAUDE.md
+skills = "skills"
+agents = "agents"
+hooks = "hooks"
+rules = "rules"
+plugins = "plugins"
+"CLAUDE.md" = "AGENTS.md"                        # Our shared AGENTS.md → their CLAUDE.md
 "settings.json" = "harness/claude/settings.json"
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -32,15 +32,14 @@ plugins      = "plugins"
 # ─────────────────────────────────────────────────────────────────────────────
 [forge]
 target = "~/forge"
-supports_hooks = false            # No hook system
-supports_plugins = false          # No plugin system
-supports_rules = false            # Rules go in AGENTS.md instead
-guidelines_file = "AGENTS.md"    # Forge reads AGENTS.md natively
-config_format = "toml"           # .forge.toml
+supports_hooks = false        # No hook system
+supports_plugins = false      # No plugin system
+supports_rules = false        # Rules go in AGENTS.md instead
+guidelines_file = "AGENTS.md" # Forge reads AGENTS.md natively
+config_format = "toml"        # .forge.toml
 
 [forge.symlinks]
-skills      = "skills"
-agents      = "agents"            # Forge agent format differs (see agents/README.md)
+skills = "skills"
 "AGENTS.md" = "AGENTS.md"
 ".forge.toml" = "harness/forge/.forge.toml"
 
@@ -50,16 +49,16 @@ agents      = "agents"            # Forge agent format differs (see agents/READM
 # ─────────────────────────────────────────────────────────────────────────────
 [opencode]
 target = "~/.config/opencode"
-supports_hooks = false            # No hook system
-supports_plugins = true           # Has plugin support
-supports_rules = false            # Rules go in AGENTS.md
-guidelines_file = "AGENTS.md"    # OpenCode reads AGENTS.md natively (falls back to CLAUDE.md)
-config_format = "jsonc"           # opencode.json / opencode.jsonc
+supports_hooks = false        # No hook system
+supports_plugins = true       # Has plugin support
+supports_rules = false        # Rules go in AGENTS.md
+guidelines_file = "AGENTS.md" # OpenCode reads AGENTS.md natively (falls back to CLAUDE.md)
+config_format = "jsonc"       # opencode.json / opencode.jsonc
 
 [opencode.symlinks]
-skills      = "skills"
-agents      = "agents"
-commands    = "commands"          # OpenCode-specific slash commands
+skills = "skills"
+agents = "agents"
+commands = "commands"                              # OpenCode-specific slash commands
 "AGENTS.md" = "AGENTS.md"
 "opencode.json" = "harness/opencode/opencode.json"
 
@@ -69,15 +68,15 @@ commands    = "commands"          # OpenCode-specific slash commands
 # ─────────────────────────────────────────────────────────────────────────────
 [codex]
 target = "~/.codex"
-supports_hooks = true             # Has hook system
-supports_plugins = true           # Has plugin support
-supports_rules = true             # Supports .codex/rules/ directory
-guidelines_file = "AGENTS.md"    # Codex reads AGENTS.md natively
-config_format = "toml"           # config.toml
+supports_hooks = true         # Has hook system
+supports_plugins = true       # Has plugin support
+supports_rules = true         # Supports .codex/rules/ directory
+guidelines_file = "AGENTS.md" # Codex reads AGENTS.md natively
+config_format = "toml"        # config.toml
 
 [codex.symlinks]
-skills      = "skills"
-agents      = "agents"
+skills = "skills"
+agents = "agents"
 "AGENTS.md" = "AGENTS.md"
 "config.toml" = "harness/codex/config.toml"
 
@@ -94,6 +93,6 @@ agents      = "agents"
 #
 # Skills use identical SKILL.md format across all three. No conversion needed.
 #
-# The install script handles agent format differences by maintaining
-# harness-specific agent dirs in harness/<name>/agents/ when the shared
-# agents don't work as-is. Codex CLI shares the same AGENTS.md convention.
+# Harness-specific agent directories live in harness/<name>/agents/ when the
+# shared agent frontmatter is not compatible with that harness. Codex CLI
+# shares the same AGENTS.md convention as the shared source agents.

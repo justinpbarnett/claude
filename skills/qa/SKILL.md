@@ -1,116 +1,130 @@
 ---
 name: qa
-description: >
-  Test the application in a real browser, find bugs, fix them with atomic commits, re-verify. Auto-generates regression tests for every fix.
-  Triggers on: "qa", "test this", "check this page", "verify this works", "browse test"
+description: Interactive QA session where user reports bugs or issues conversationally, and the agent files GitHub issues. Explores the codebase in the background for context and domain language. Use when user wants to report bugs, do QA, file issues conversationally, or mentions "QA session".
 ---
 
-# QA
+# QA Session
 
-Test the application in a real browser, find bugs, fix them, and generate regression tests.
+Run an interactive QA session. The user describes problems they're encountering. You clarify, explore the codebase for context, and file GitHub issues that are durable, user-focused, and use the project's domain language.
 
-## Variables
+## For each issue the user raises
 
-- `argument` -- URL to test, or description of what to test
+### 1. Listen and lightly clarify
 
-## Instructions
+Let the user describe the problem in their own words. Ask **at most 2-3 short clarifying questions** focused on:
 
-### Step 0: Parse Target
+- What they expected vs what actually happened
+- Steps to reproduce (if not obvious)
+- Whether it's consistent or intermittent
 
-If `argument` is a URL, navigate to it.
-If it's a description, derive what needs testing.
+Do NOT over-interview. If the description is clear enough to file, move on.
 
-### Step 1: Set Up Test Environment
+### 2. Explore the codebase in the background
 
-- Start the dev server if needed
-- Ensure browser is available
-- Clear any auth/session state if needed
+While talking to the user, kick off an Agent (subagent_type=Explore) in the background to understand the relevant area. The goal is NOT to find a fix — it's to:
 
-### Step 2: Define Test Plan
+- Learn the domain language used in that area (check UBIQUITOUS_LANGUAGE.md)
+- Understand what the feature is supposed to do
+- Identify the user-facing behavior boundary
 
-List what to verify:
-- Core user flows
-- Edge cases
-- Error states
-- Empty states
-- Responsive behavior
+This context helps you write a better issue — but the issue itself should NOT reference specific files, line numbers, or internal implementation details.
 
-### Step 3: Execute Tests
+### 3. Assess scope: single issue or breakdown?
 
-For each test case:
-1. Navigate to starting state
-2. Perform action
-3. Verify expected result
-4. Screenshot on failure
+Before filing, decide whether this is a **single issue** or needs to be **broken down** into multiple issues.
 
-### Step 4: Document Bugs
+Break down when:
 
-For each bug found:
-- Reproduction steps
-- Expected vs actual
-- Screenshot/video
-- Severity (blocker/major/minor)
+- The fix spans multiple independent areas (e.g. "the form validation is wrong AND the success message is missing AND the redirect is broken")
+- There are clearly separable concerns that different people could work on in parallel
+- The user describes something that has multiple distinct failure modes or symptoms
 
-### Step 5: Fix Bugs
+Keep as a single issue when:
 
-For each bug:
-1. Investigate the root cause
-2. Make minimal fix
-3. Commit with descriptive message
-4. Re-verify the fix works
-5. Create regression test
+- It's one behavior that's wrong in one place
+- The symptoms are all caused by the same root behavior
 
-### Step 6: Report
+### 4. File the GitHub issue(s)
 
-Summary of:
-- Tests run
-- Bugs found
-- Bugs fixed
-- Regression tests added
+Create issues with `gh issue create`. Do NOT ask the user to review first — just file and share URLs.
 
-## Output Format
+Issues must be **durable** — they should still make sense after major refactors. Write from the user's perspective.
+
+#### For a single issue
+
+Use this template:
 
 ```
-QA Report: <target>
+## What happened
 
-Tests Run:
-- <test 1>: <pass|fail>
-- <test 2>: <pass|fail>
+[Describe the actual behavior the user experienced, in plain language]
 
-Bugs Found:
-1. <description> [<severity>]
-   - Steps to reproduce
-   - Fix applied
+## What I expected
 
-Bugs Fixed: <N>
-Regression Tests: <N>
+[Describe the expected behavior]
 
-Status: <complete>
+## Steps to reproduce
+
+1. [Concrete, numbered steps a developer can follow]
+2. [Use domain terms from the codebase, not internal module names]
+3. [Include relevant inputs, flags, or configuration]
+
+## Additional context
+
+[Any extra observations from the user or from codebase exploration that help frame the issue — e.g. "this only happens when using the Docker layer, not the filesystem layer" — use domain language but don't cite files]
 ```
 
-## Real Browser Testing
+#### For a breakdown (multiple issues)
 
-Use Playwright or similar to:
-- Open actual browser
-- Click through flows
-- Fill forms
-- Verify rendering
-- Check console for errors
-- Take screenshots
+Create issues in dependency order (blockers first) so you can reference real issue numbers.
 
-## Cookbook
+Use this template for each sub-issue:
 
-<If: the app requires auth>
-<Then: check for test credentials or use /setup-browser-cookies>
+```
+## Parent issue
 
-<If: bugs are found during testing>
-<Then: fix them one at a time with atomic commits>
+#<parent-issue-number> (if you created a tracking issue) or "Reported during QA session"
 
-<If: a fix is made>
-<Then: always re-verify before moving on>
+## What's wrong
 
-<If: regression test can be written>
-<Then: add it to the test suite>
+[Describe this specific behavior problem — just this slice, not the whole report]
 
-<If: the bug is complex>
-<Then: use /investigate to find root cause before fixing>
+## What I expected
+
+[Expected behavior for this specific slice]
+
+## Steps to reproduce
+
+1. [Steps specific to THIS issue]
+
+## Blocked by
+
+- #<issue-number> (if this issue can't be fixed until another is resolved)
+
+Or "None — can start immediately" if no blockers.
+
+## Additional context
+
+[Any extra observations relevant to this slice]
+```
+
+When creating a breakdown:
+
+- **Prefer many thin issues over few thick ones** — each should be independently fixable and verifiable
+- **Mark blocking relationships honestly** — if issue B genuinely can't be tested until issue A is fixed, say so. If they're independent, mark both as "None — can start immediately"
+- **Create issues in dependency order** so you can reference real issue numbers in "Blocked by"
+- **Maximize parallelism** — the goal is that multiple people (or agents) can grab different issues simultaneously
+
+#### Rules for all issue bodies
+
+- **No file paths or line numbers** — these go stale
+- **Use the project's domain language** (check UBIQUITOUS_LANGUAGE.md if it exists)
+- **Describe behaviors, not code** — "the sync service fails to apply the patch" not "applyPatch() throws on line 42"
+- **Reproduction steps are mandatory** — if you can't determine them, ask the user
+- **Keep it concise** — a developer should be able to read the issue in 30 seconds
+
+After filing, print all issue URLs (with blocking relationships summarized) and ask: "Next issue, or are we done?"
+
+### 5. Continue the session
+
+Keep going until the user says they're done. Each issue is independent — don't batch them.

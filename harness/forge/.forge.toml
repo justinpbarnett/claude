@@ -23,7 +23,7 @@ model_cache_ttl_secs = 604800
 max_commit_count = 20
 top_p = 0.8
 top_k = 30
-max_tokens = 20480
+max_tokens = 8192
 max_tool_failure_per_turn = 3
 max_requests_per_turn = 100
 restricted = false
@@ -31,6 +31,8 @@ tool_supported = true
 currency_symbol = ""
 currency_conversion_rate = 0.0
 verify_todos = true
+research_subagent = false
+subagents = true
 
 [retry]
 initial_backoff_ms = 200
@@ -65,8 +67,8 @@ keep_alive_while_idle = true
 accept_invalid_certs = false
 
 [session]
-provider_id = "spark"
-model_id = "qwen3-coder"
+provider_id = "openai"
+model_id = "gpt-5.4"
 
 [updates]
 frequency = "daily"
@@ -81,11 +83,5 @@ message_threshold = 200
 on_turn_end = false
 
 [reasoning]
-effort = "high"
+effort = "xhigh"
 enabled = true
-
-[[providers]]
-id = "spark"
-url = "http://192.168.0.110:8000/v1/chat/completions"
-models = "http://192.168.0.110:8000/v1/models"
-response_type = "OpenAI"

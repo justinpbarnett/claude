@@ -1,9 +1,0 @@
-- Never mention claude or ai in commits
-- Never use emdashes, hyphens, or double-hyphens between words in user-facing content. Replace with commas, periods, colons, or parentheses.
-- Use `just` as the task runner when a justfile exists, `make` when a Makefile exists
-- Prefer atomic commits with conventional commit format (feat:, fix:, refactor:, etc.)
-- When told to "think hard", use thorough analysis and consider edge cases
-- After each change, run fast checks (build, lint, typecheck) and fix errors before continuing
-- Run the full test suite only once at the end, when all changes are complete
-- Don't add unnecessary comments, docstrings, or type annotations to unchanged code
-- **SAFETY: NEVER execute `rm -rf *`, `rm -rf .*`, `rm -rf .git`, or any command with wildcards and recursive delete. These caused complete data loss on March 28, 2026. Use specific file paths only.**

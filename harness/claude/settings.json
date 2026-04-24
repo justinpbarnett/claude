@@ -134,7 +134,8 @@
     "pr-review-toolkit@claude-plugins-official": true,
     "claude-code-setup@claude-plugins-official": true,
     "feature-dev@claude-plugins-official": true,
-    "enver@enver-plugins": true
+    "enver@enver-plugins": true,
+    "ouroboros@ouroboros": true
   },
   "extraKnownMarketplaces": {
     "enver-plugins": {
@@ -142,11 +143,17 @@
         "source": "github",
         "repo": "EnverVentures/claude-plugins"
       }
+    },
+    "ouroboros": {
+      "source": {
+        "source": "github",
+        "repo": "Q00/ouroboros"
+      }
     }
   },
   "effortLevel": "medium",
   "autoCompactWindow": 200000,
   "skipDangerousModePermissionPrompt": true,
-  "voiceEnabled": true,
-  "skipAutoPermissionPrompt": true
+  "skipAutoPermissionPrompt": true,
+  "voiceEnabled": true
 }
