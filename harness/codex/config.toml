@@ -5,3 +5,12 @@
 # Put them in the target repo's .codex/config.toml instead.
 
 model = "o3"
+
+[projects."/home/jpb/dev/workshop"]
+trust_level = "trusted"
+
+[projects."/home/jpb/dev/enver/Survival"]
+trust_level = "trusted"
+
+[tui.model_availability_nux]
+"gpt-5.5" = 2
