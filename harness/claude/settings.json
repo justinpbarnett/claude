@@ -154,6 +154,5 @@
   "effortLevel": "medium",
   "autoCompactWindow": 200000,
   "skipDangerousModePermissionPrompt": true,
-  "skipAutoPermissionPrompt": true,
   "voiceEnabled": true
 }
