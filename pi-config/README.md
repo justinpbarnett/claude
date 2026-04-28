@@ -9,6 +9,7 @@ Tracked items are copied from or linked into the target pi config directory:
 - `settings.json`
 - `models.json`
 - `keybindings.json`, if present
+- `autoresearch.config.json`, if present
 - `AGENTS.md`, `SYSTEM.md`, `APPEND_SYSTEM.md`, if present
 - `prompts/`, `skills/`, `themes/`, `agents/`, if present
 - portable files inside `extensions/`

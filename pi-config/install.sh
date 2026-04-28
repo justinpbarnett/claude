@@ -13,6 +13,7 @@ TOP_LEVEL_FILES=(
   settings.json
   models.json
   keybindings.json
+  autoresearch.config.json
   AGENTS.md
   SYSTEM.md
   APPEND_SYSTEM.md
