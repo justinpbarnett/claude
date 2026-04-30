@@ -1,20 +1,75 @@
 ---
-name: setup-matt-pocock-skills
-description: Sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` so the engineering skills know this repo's issue tracker (GitHub or local markdown), triage label vocabulary, and domain doc layout. Run before first use of `to-issues`, `to-prd`, `triage`, `diagnose`, `tdd`, `improve-codebase-architecture`, or `zoom-out` — or if those skills appear to be missing context about the issue tracker, triage labels, or domain docs.
+name: setup-jpb-skills
+description: Syncs JPB's repo-managed Matt Pocock skills, then sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` so JPB's skills know the repo's issue tracker, triage label vocabulary, and domain doc layout. Run before first use of `to-issues`, `to-prd`, `triage`, `diagnose`, `tdd`, `improve-codebase-architecture`, or `zoom-out` — or if those skills appear to be missing repo context.
 disable-model-invocation: true
 ---
 
-# Setup Matt Pocock's Skills
+# Setup JPB Skills
 
-Scaffold the per-repo configuration that the engineering skills assume:
+Scaffold the per-repo configuration that JPB's engineering skills assume, and optionally sync the repo-managed Matt Pocock skills before doing so:
 
-- **Issue tracker** — where issues live (GitHub by default; local markdown is also supported out of the box)
-- **Triage labels** — the strings used for the five canonical triage roles
-- **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
+- **Matt Pocock skill sync** — refresh upstream engineering/productivity skills, remove upstream skills that Matt deprecated, and ask whether to add newly available upstream skills not already installed.
+- **Issue tracker** — where issues live. Default to GitHub when the repo has a GitHub remote; local markdown and other trackers are also supported.
+- **Triage labels** — the strings used for the five canonical triage roles.
+- **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them.
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
 ## Process
+
+### 0. Sync Matt Pocock skills
+
+Before configuring the target repo, check whether the local JPB skill repo is available at `/home/jpb/dev/ai`. If it is, offer to sync Matt Pocock's upstream skills.
+
+Explain:
+
+> JPB's skill repo keeps selected Matt Pocock engineering/productivity skills as repo-managed copies. Syncing means: pull Matt's latest `main`, update text for installed upstream-synced skills, remove any installed upstream skill that Matt has moved to `deprecated/`, and ask before adding upstream skills that are available but not installed yet. Local JPB skills (`contribute`, `deep-audit`, `find-skills`, `setup-jpb-skills`) are preserved.
+
+Ask the user whether to run the sync. If yes:
+
+1. Clone or refresh Matt's repo in a temp directory:
+
+   ```bash
+   rm -rf /tmp/matt-skills
+   git clone --depth 1 https://github.com/mattpocock/skills.git /tmp/matt-skills
+   ```
+
+2. Discover upstream sets:
+
+   ```bash
+   find /tmp/matt-skills/skills/engineering /tmp/matt-skills/skills/productivity -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+   find /tmp/matt-skills/skills/deprecated -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+   find /home/jpb/dev/ai/skills -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+   ```
+
+3. Preserve these local JPB skills regardless of upstream state:
+
+   ```text
+   contribute
+   deep-audit
+   find-skills
+   setup-jpb-skills
+   ```
+
+4. For installed skills that are present in Matt's `engineering/` or `productivity/`, replace the local copy with the upstream directory, except do **not** replace `setup-jpb-skills` with upstream `setup-matt-pocock-skills`.
+
+5. For installed skills that are present in Matt's `deprecated/`, remove them from `/home/jpb/dev/ai/skills` and remove matching compatibility links from `~/.agents/skills` and `~/.pi/agent/skills`, unless they are one of the preserved local JPB skills.
+
+6. For upstream engineering/productivity skills that are not currently installed, show the list to the user and ask which to add. Do not add all automatically.
+
+7. After changes, verify upstream-synced skills are exact copies with `diff -qr`, and maintain compatibility links:
+
+   ```bash
+   for path in /home/jpb/dev/ai/skills/*; do
+     skill=$(basename "$path")
+     ln -sfn "/home/jpb/dev/ai/skills/$skill" "$HOME/.agents/skills/$skill"
+     ln -sfn "/home/jpb/dev/ai/skills/$skill" "$HOME/.pi/agent/skills/$skill"
+   done
+   ```
+
+8. Present a concise summary: updated, removed-as-deprecated, newly-added, skipped, and preserved-local.
+
+If the user declines sync, continue to per-repo configuration.
 
 ### 1. Explore
 
@@ -35,9 +90,9 @@ Assume the user does not know what these terms mean. Each section starts with a 
 
 **Section A — Issue tracker.**
 
-> Explainer: The "issue tracker" is where issues live for this repo. Skills like `to-issues`, `triage`, `to-prd`, and `qa` read from and write to it — they need to know whether to call `gh issue create`, write a markdown file under `.scratch/`, or follow some other workflow you describe. Pick the place you actually track work for this repo.
+> Explainer: The "issue tracker" is where issues live for this repo. Skills like `to-issues`, `triage`, and `to-prd` read from and write to it — they need to know whether to call `gh issue create`, write a markdown file under `.scratch/`, or follow some other workflow you describe. Pick the place you actually track work for this repo.
 
-Default posture: these skills were designed for GitHub. If a `git remote` points at GitHub, propose that. If a `git remote` points at GitLab (`gitlab.com` or a self-hosted host), propose GitLab. Otherwise (or if the user prefers), offer:
+Default posture: JPB's workflow is GitHub-first. If a `git remote` points at GitHub, propose GitHub. If a `git remote` points at GitLab (`gitlab.com` or a self-hosted host), propose GitLab. Otherwise (or if the user prefers), offer:
 
 - **GitHub** — issues live in the repo's GitHub Issues (uses the `gh` CLI)
 - **GitLab** — issues live in the repo's GitLab Issues (uses the [`glab`](https://gitlab.com/gitlab-org/cli) CLI)
@@ -118,4 +173,4 @@ For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch us
 
 ### 5. Done
 
-Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers or restart from scratch.
+Tell the user the setup is complete and which JPB engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers or restart from scratch.

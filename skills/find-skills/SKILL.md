@@ -1,142 +1,153 @@
 ---
 name: find-skills
-description: Helps users discover and install agent skills when they ask questions like "how do I do X", "find a skill for X", "is there a skill that can...", or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.
+description: Helps users discover which installed repo-managed skill to use, and whether a missing capability should be added to this repo's skills source of truth. Use when users ask "how do I do X", "find a skill for X", "is there a skill that can...", or ask about extending agent capabilities.
 ---
 
 # Find Skills
 
-This skill helps you discover and install skills from the open agent skills ecosystem.
+This repo is the source of truth for JPB's installed skills.
+
+Canonical skill directory:
+
+```text
+/home/jpb/dev/ai/skills
+```
+
+Compatibility links point back here:
+
+```text
+~/.agents/skills/<skill> -> /home/jpb/dev/ai/skills/<skill>
+~/.pi/agent/skills/<skill> -> /home/jpb/dev/ai/skills/<skill>
+```
+
+Do **not** install or update skills directly into `~/.agents/skills` or `~/.pi/agent/skills`. If a skill is added or changed, update this repo first, then ensure those global links point back to the repo copy.
+
+## Current Skill Set
+
+### Upstream-synced Matt Pocock skills
+
+These should stay word-for-word identical to the matching skill directories from:
+
+```text
+https://github.com/mattpocock/skills/tree/main/skills
+```
+
+Included categories: **engineering** and **productivity** only, except where a local JPB fork is listed below.
+
+Current upstream-synced skills:
+
+- `caveman` — ultra-compressed communication mode
+- `diagnose` — disciplined diagnosis/debugging loop
+- `grill-me` — stress-test a plan through questioning
+- `grill-with-docs` — grill a plan and update context/ADR docs
+- `improve-codebase-architecture` — find architectural refactoring opportunities
+- `tdd` — red/green/refactor workflow
+- `to-issues` — break plans/specs into issues
+- `to-prd` — turn conversation context into a PRD
+- `triage` — triage issues through a label/state machine
+- `write-a-skill` — create new skills
+- `zoom-out` — step back and reassess direction/context
+
+When checking or refreshing these, clone/pull Matt's repo and copy only the desired `skills/engineering/*` and `skills/productivity/*` directories into this repo's flat `skills/<name>/` layout. Then verify exactness with `diff -qr`.
+
+### Local/custom JPB skills
+
+These are intentionally local to this repo and do not need to match Matt's upstream repo:
+
+- `contribute` — upstream contribution pipeline
+- `deep-audit` — comprehensive multi-angle code audit
+- `find-skills` — this skill; documents JPB's local skill setup and discovery process
+- `setup-jpb-skills` — JPB-specific per-repo setup for issue tracker, triage labels, and domain docs
+
+Keep these unless the user explicitly asks to remove them.
 
 ## When to Use This Skill
 
 Use this skill when the user:
 
-- Asks "how do I do X" where X might be a common task with an existing skill
-- Says "find a skill for X" or "is there a skill for X"
-- Asks "can you do X" where X is a specialized capability
-- Expresses interest in extending agent capabilities
-- Wants to search for tools, templates, or workflows
-- Mentions they wish they had help with a specific domain (design, testing, deployment, etc.)
+- Asks which existing skill applies to a task
+- Asks whether a capability is already installed
+- Wants to add, remove, sync, or audit skills
+- Mentions Matt Pocock's skills, JPB skills, or exact upstream copies
+- Asks about `~/.agents/skills`, `~/.pi/agent/skills`, or repo skill symlinks
 
-## What is the Skills CLI?
+## Discovery Process
 
-The Skills CLI (`npx skills`) is the package manager for the open agent skills ecosystem. Skills are modular packages that extend agent capabilities with specialized knowledge, workflows, and tools.
+### 1. Check installed repo skills first
 
-**Key commands:**
-
-- `npx skills find [query]` - Search for skills interactively or by keyword
-- `npx skills add <package>` - Install a skill from GitHub or other sources
-- `npx skills check` - Check for skill updates
-- `npx skills update` - Update all installed skills
-
-**Browse skills at:** https://skills.sh/
-
-## How to Help Users Find Skills
-
-### Step 1: Understand What They Need
-
-When a user asks for help with something, identify:
-
-1. The domain (e.g., React, testing, design, deployment)
-2. The specific task (e.g., writing tests, creating animations, reviewing PRs)
-3. Whether this is a common enough task that a skill likely exists
-
-### Step 2: Check the Leaderboard First
-
-Before running a CLI search, check the [skills.sh leaderboard](https://skills.sh/) to see if a well-known skill already exists for the domain. The leaderboard ranks skills by total installs, surfacing the most popular and battle-tested options.
-
-For example, top skills for web development include:
-- `vercel-labs/agent-skills` — React, Next.js, web design (100K+ installs each)
-- `anthropics/skills` — Frontend design, document processing (100K+ installs)
-
-### Step 3: Search for Skills
-
-If the leaderboard doesn't cover the user's need, run the find command:
+List available skills from the repo source of truth:
 
 ```bash
-npx skills find [query]
+find /home/jpb/dev/ai/skills -maxdepth 2 -name SKILL.md -printf '%h\n' | sed 's#^/home/jpb/dev/ai/skills/##' | sort
 ```
 
-For example:
+Read likely candidates' `SKILL.md` files before recommending them.
 
-- User asks "how do I make my React app faster?" → `npx skills find react performance`
-- User asks "can you help me with PR reviews?" → `npx skills find pr review`
-- User asks "I need to create a changelog" → `npx skills find changelog`
+### 2. Explain the best current fit
 
-### Step 4: Verify Quality Before Recommending
+Recommend an installed skill when one matches. Mention why it fits and any important trigger phrase.
 
-**Do not recommend a skill based solely on search results.** Always verify:
+Examples:
 
-1. **Install count** — Prefer skills with 1K+ installs. Be cautious with anything under 100.
-2. **Source reputation** — Official sources (`vercel-labs`, `anthropics`, `microsoft`) are more trustworthy than unknown authors.
-3. **GitHub stars** — Check the source repository. A skill from a repo with <100 stars should be treated with skepticism.
+- Debugging/failing behavior → `diagnose`
+- Test-first feature/fix → `tdd`
+- Architecture cleanup → `improve-codebase-architecture`
+- Convert plan to issues → `to-issues`
+- Create PRD → `to-prd`
+- Triage/file issues → `triage`
+- Configure a repo for the engineering skills → `setup-jpb-skills`
+- Write a new skill → `write-a-skill`
+- Upstream OSS contribution → `contribute`
+- Broad quality review → `deep-audit`
+- Need brevity → `caveman`
 
-### Step 5: Present Options to the User
+### 3. If no installed skill fits, search upstream
 
-When you find relevant skills, present them to the user with:
-
-1. The skill name and what it does
-2. The install count and source
-3. The install command they can run
-4. A link to learn more at skills.sh
-
-Example response:
-
-```
-I found a skill that might help! The "react-best-practices" skill provides
-React and Next.js performance optimization guidelines from Vercel Engineering.
-(185K installs)
-
-To install it:
-npx skills add vercel-labs/agent-skills@react-best-practices
-
-Learn more: https://skills.sh/vercel-labs/agent-skills/react-best-practices
-```
-
-### Step 6: Offer to Install
-
-If the user wants to proceed, you can install the skill for them:
+For Matt skills, inspect:
 
 ```bash
-npx skills add <owner/repo@skill> -g -y
+git clone --depth 1 https://github.com/mattpocock/skills.git /tmp/matt-skills
+find /tmp/matt-skills/skills -maxdepth 3 -name SKILL.md -print
 ```
 
-The `-g` flag installs globally (user-level) and `-y` skips confirmation prompts.
+Only recommend adding from Matt's repo if it is in `engineering` or `productivity`, unless the user explicitly asks for another category.
 
-## Common Skill Categories
+For non-Matt skills, use web/search or the relevant ecosystem only after confirming the repo skill set has no fit.
 
-When searching, consider these common categories:
+### 4. Adding or syncing skills
 
-| Category        | Example Queries                          |
-| --------------- | ---------------------------------------- |
-| Web Development | react, nextjs, typescript, css, tailwind |
-| Testing         | testing, jest, playwright, e2e           |
-| DevOps          | deploy, docker, kubernetes, ci-cd        |
-| Documentation   | docs, readme, changelog, api-docs        |
-| Code Quality    | review, lint, refactor, best-practices   |
-| Design          | ui, ux, design-system, accessibility     |
-| Productivity    | workflow, automation, git                |
+For Matt engineering/productivity syncs, preserve local/custom JPB skills. In particular, do not overwrite `setup-jpb-skills` with upstream `setup-matt-pocock-skills` unless the user explicitly asks to revert to upstream.
 
-## Tips for Effective Searches
-
-1. **Use specific keywords**: "react testing" is better than just "testing"
-2. **Try alternative terms**: If "deploy" doesn't work, try "deployment" or "ci-cd"
-3. **Check popular sources**: Many skills come from `vercel-labs/agent-skills` or `ComposioHQ/awesome-claude-skills`
-
-## When No Skills Are Found
-
-If no relevant skills exist:
-
-1. Acknowledge that no existing skill was found
-2. Offer to help with the task directly using your general capabilities
-3. Suggest the user could create their own skill with `npx skills init`
-
-Example:
-
+```bash
+remote=/tmp/matt-skills
+repo=/home/jpb/dev/ai
+for category in engineering productivity; do
+  for src in "$remote/skills/$category"/*; do
+    name=$(basename "$src")
+    [ "$name" = "setup-matt-pocock-skills" ] && continue
+    rm -rf "$repo/skills/$name"
+    cp -a "$src" "$repo/skills/$name"
+    diff -qr "$src" "$repo/skills/$name"
+  done
+done
 ```
-I searched for skills related to "xyz" but didn't find any matches.
-I can still help you with this task directly! Would you like me to proceed?
 
-If this is something you do often, you could create your own skill:
-npx skills init my-xyz-skill
+Then maintain compatibility links:
+
+```bash
+for path in /home/jpb/dev/ai/skills/*; do
+  skill=$(basename "$path")
+  ln -sfn "/home/jpb/dev/ai/skills/$skill" "$HOME/.agents/skills/$skill"
+  ln -sfn "/home/jpb/dev/ai/skills/$skill" "$HOME/.pi/agent/skills/$skill"
+done
 ```
+
+Remove global links for deleted skills so Pi does not expose stale capabilities.
+
+## Important Rules
+
+- This repo is the source of truth.
+- Matt upstream-synced skills should remain exact upstream copies.
+- Do not edit upstream-synced Matt skills directly unless the user explicitly wants a fork/divergence.
+- Keep `contribute`, `deep-audit`, `find-skills`, and `setup-jpb-skills` as local/custom skills.
+- Do not use `npx skills add -g` as the default install path; it bypasses this repo source-of-truth setup.
