@@ -23,7 +23,7 @@ Before configuring the target repo, check whether the local JPB skill repo is av
 
 Explain:
 
-> JPB's skill repo keeps selected Matt Pocock engineering/productivity skills as repo-managed copies. Syncing means: pull Matt's latest `main`, update text for installed upstream-synced skills, remove any installed upstream skill that Matt has moved to `deprecated/`, and ask before adding upstream skills that are available but not installed yet. Local JPB skills (`contribute`, `deep-audit`, `find-skills`, `setup-jpb-skills`) are preserved.
+> JPB's skill repo keeps selected Matt Pocock engineering/productivity skills as repo-managed copies. Syncing means: pull Matt's latest `main`, update text for installed upstream-synced skills, remove any installed upstream skill that Matt has moved to `deprecated/`, and ask before adding upstream skills that are available but not installed yet. Local JPB skills (`contribute`, `deep-audit`, `find-skills`, `humanize`, `setup-jpb-skills`) are preserved.
 
 Ask the user whether to run the sync. If yes:
 
@@ -48,10 +48,11 @@ Ask the user whether to run the sync. If yes:
    contribute
    deep-audit
    find-skills
+   humanize
    setup-jpb-skills
    ```
 
-4. For installed skills that are present in Matt's `engineering/` or `productivity/`, replace the local copy with the upstream directory, except do **not** replace `setup-jpb-skills` with upstream `setup-matt-pocock-skills`.
+4. For installed skills that are present in Matt's `engineering/` or `productivity/`, replace the local copy with the upstream directory, except do **not** replace preserved local JPB skills (`contribute`, `deep-audit`, `find-skills`, `humanize`, `setup-jpb-skills`) or replace `setup-jpb-skills` with upstream `setup-matt-pocock-skills`.
 
 5. For installed skills that are present in Matt's `deprecated/`, remove them from `/home/jpb/dev/ai/skills` and remove matching compatibility links from `~/.agents/skills` and `~/.pi/agent/skills`, unless they are one of the preserved local JPB skills.
 
