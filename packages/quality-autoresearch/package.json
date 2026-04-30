@@ -1,0 +1,16 @@
+{
+  "name": "quality-autoresearch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pi package for scaffolding quality-focused pi-autoresearch sessions.",
+  "keywords": ["pi-package", "autoresearch", "quality"],
+  "type": "module",
+  "peerDependencies": {
+    "@mariozechner/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "extensions": ["./extensions"],
+    "skills": ["./skills"]
+  }
+}

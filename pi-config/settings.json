@@ -3,5 +3,10 @@
   "defaultModel": "gpt-5.5",
   "defaultThinkingLevel": "off",
   "doubleEscapeAction": "tree",
-  "lastChangelogVersion": "0.70.2"
+  "lastChangelogVersion": "0.70.6",
+  "packages": [
+    "https://github.com/davebcn87/pi-autoresearch",
+    "/home/jpb/dev/ai/packages/quality-autoresearch"
+  ],
+  "hideThinkingBlock": true
 }

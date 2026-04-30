@@ -55,6 +55,39 @@ install_codex() {
     link "$REPO_DIR/harness/codex/config.toml"       "$target/config.toml"
 }
 
+install_pi() {
+    local settings_file="${PI_SETTINGS_FILE:-$HOME/.pi/agent/settings.json}"
+    local package_path="$REPO_DIR/packages/quality-autoresearch"
+    echo "  Settings: $settings_file"
+    echo "  Package: $package_path"
+    mkdir -p "$(dirname "$settings_file")"
+
+    SETTINGS_FILE="$settings_file" PACKAGE_PATH="$package_path" python - <<'PY'
+import json
+import os
+from pathlib import Path
+
+settings_path = Path(os.environ["SETTINGS_FILE"])
+package_path = os.environ["PACKAGE_PATH"]
+
+if settings_path.exists() and settings_path.read_text().strip():
+    data = json.loads(settings_path.read_text())
+else:
+    data = {}
+
+packages = data.get("packages", [])
+if not isinstance(packages, list):
+    raise SystemExit("settings.json field 'packages' exists but is not a list")
+
+if package_path not in packages:
+    packages.append(package_path)
+
+data["packages"] = packages
+settings_path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+    echo "    ADDED quality-autoresearch package"
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -134,6 +167,7 @@ usage() {
     echo "  forge      ForgeCode   (~/forge/)"
     echo "  opencode   OpenCode    (~/.config/opencode/)"
     echo "  codex      Codex CLI   (~/.codex/)"
+    echo "  pi         Pi packages (~/.pi/agent/settings.json)"
     echo "  all        All harnesses"
     echo ""
     echo "Examples:"
@@ -143,7 +177,7 @@ usage() {
     echo "  $0                 # Interactive: select harnesses"
 }
 
-ALL_HARNESSES=(claude forge opencode codex)
+ALL_HARNESSES=(claude forge opencode codex pi)
 
 select_interactive() {
     echo "Which harnesses do you want to install?"
@@ -194,7 +228,7 @@ fi
 
 for harness in "${SELECTED[@]}"; do
     case "$harness" in
-        claude|forge|opencode|codex)
+        claude|forge|opencode|codex|pi)
             echo "Installing $harness..."
             "install_$harness"
             echo ""

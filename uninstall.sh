@@ -1,6 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
+REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Harness definitions (must mirror install.sh)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -44,6 +46,33 @@ uninstall_codex() {
     unlink_item "$target/config.toml"
 }
 
+uninstall_pi() {
+    local settings_file="${PI_SETTINGS_FILE:-$HOME/.pi/agent/settings.json}"
+    local package_path="$REPO_DIR/packages/quality-autoresearch"
+    echo "  Settings: $settings_file"
+
+    if [ ! -e "$settings_file" ]; then
+        echo "    SKIP settings.json (not found)"
+        return
+    fi
+
+    SETTINGS_FILE="$settings_file" PACKAGE_PATH="$package_path" python - <<'PY'
+import json
+import os
+from pathlib import Path
+
+settings_path = Path(os.environ["SETTINGS_FILE"])
+package_path = os.environ["PACKAGE_PATH"]
+data = json.loads(settings_path.read_text()) if settings_path.read_text().strip() else {}
+packages = data.get("packages", [])
+if not isinstance(packages, list):
+    raise SystemExit("settings.json field 'packages' exists but is not a list")
+data["packages"] = [pkg for pkg in packages if pkg != package_path]
+settings_path.write_text(json.dumps(data, indent=2) + "\n")
+PY
+    echo "    REMOVED quality-autoresearch package"
+}
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,10 +108,11 @@ usage() {
     echo "  forge      ForgeCode   (~/forge/)"
     echo "  opencode   OpenCode    (~/.config/opencode/)"
     echo "  codex      Codex CLI   (~/.codex/)"
+    echo "  pi         Pi packages (~/.pi/agent/settings.json)"
     echo "  all        All harnesses"
 }
 
-ALL_HARNESSES=(claude forge opencode codex)
+ALL_HARNESSES=(claude forge opencode codex pi)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
@@ -108,7 +138,7 @@ fi
 
 for harness in "${SELECTED[@]}"; do
     case "$harness" in
-        claude|forge|opencode|codex)
+        claude|forge|opencode|codex|pi)
             echo "Uninstalling $harness..."
             "uninstall_$harness"
             echo ""
