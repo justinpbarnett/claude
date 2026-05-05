@@ -74,7 +74,7 @@ function sanitizePayload(payload: unknown): unknown {
 	return changed ? { ...payload, tools } : payload;
 }
 
-export default function fireworksCompat(pi: PiExtensionApi): void {
+export default function fireworks(pi: PiExtensionApi): void {
 	pi.on("before_provider_request", (event, ctx) => {
 		if (!isFireworksAnthropicRequest(event, ctx)) {
 			return;

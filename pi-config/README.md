@@ -16,7 +16,7 @@ Tracked items are copied from or linked into the target pi config directory:
 
 Current portable extensions:
 
-- `fireworks-compat`
+- `fireworks`
 - `inline-slash-autocomplete`
 - `stash-draft`
 - `web-scrape`
