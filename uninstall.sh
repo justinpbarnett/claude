@@ -40,10 +40,17 @@ uninstall_opencode() {
 uninstall_codex() {
     local target="$HOME/.codex"
     echo "  Target: $target"
-    unlink_item "$target/skills"
+    unlink_children "$REPO_DIR/skills" "$target/skills"
     unlink_item "$target/agents"
     unlink_item "$target/AGENTS.md"
     unlink_item "$target/config.toml"
+}
+
+uninstall_droid() {
+    local target="$HOME/.factory"
+    echo "  Target: $target"
+    unlink_children "$REPO_DIR/skills" "$target/skills"
+    unlink_item "$target/AGENTS.md"
 }
 
 uninstall_pi() {
@@ -100,6 +107,45 @@ unlink_item() {
     fi
 }
 
+unlink_children() {
+    local source_dir="$1"
+    local target_dir="$2"
+    local name
+    local target
+    local backup
+
+    if [ ! -d "$source_dir" ]; then
+        echo "    SKIP $(basename "$target_dir") (not in repo)"
+        return
+    fi
+
+    if [ ! -d "$target_dir" ]; then
+        echo "    SKIP $(basename "$target_dir") (not found)"
+        return
+    fi
+
+    for source in "$source_dir"/*; do
+        [ -e "$source" ] || continue
+        name="$(basename "$source")"
+        target="$target_dir/$name"
+
+        if [ -L "$target" ]; then
+            rm "$target"
+            echo "    REMOVED $name"
+
+            backup=$(ls -t "$(dirname "$target_dir")/$(basename "$target_dir")".bak.*/"$name" 2>/dev/null | head -1 || true)
+            if [ -n "$backup" ]; then
+                mv "$backup" "$target"
+                echo "    RESTORED $name from $(basename "$(dirname "$backup")")"
+            fi
+        elif [ -e "$target" ]; then
+            echo "    SKIP $name (not a symlink, leaving alone)"
+        else
+            echo "    SKIP $name (not found)"
+        fi
+    done
+}
+
 usage() {
     echo "Usage: $0 [harness|all]"
     echo ""
@@ -108,11 +154,12 @@ usage() {
     echo "  forge      ForgeCode   (~/forge/)"
     echo "  opencode   OpenCode    (~/.config/opencode/)"
     echo "  codex      Codex CLI   (~/.codex/)"
+    echo "  droid      Factory.ai Droid (~/.factory/)"
     echo "  pi         Pi packages (~/.pi/agent/settings.json)"
     echo "  all        All harnesses"
 }
 
-ALL_HARNESSES=(claude forge opencode codex pi)
+ALL_HARNESSES=(claude forge opencode codex droid pi)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Main
@@ -138,7 +185,7 @@ fi
 
 for harness in "${SELECTED[@]}"; do
     case "$harness" in
-        claude|forge|opencode|codex|pi)
+        claude|forge|opencode|codex|droid|pi)
             echo "Uninstalling $harness..."
             "uninstall_$harness"
             echo ""

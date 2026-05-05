@@ -81,9 +81,25 @@ agents = "agents"
 "config.toml" = "harness/codex/config.toml"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Factory.ai Droid
+# Docs: https://docs.factory.ai/cli/configuration/skills
+# ─────────────────────────────────────────────────────────────────────────────
+[droid]
+target = "~/.factory"
+supports_hooks = true
+supports_plugins = true
+supports_rules = false
+guidelines_file = "AGENTS.md"
+config_format = "json"
+
+[droid.symlinks]
+skills = "skills"
+"AGENTS.md" = "AGENTS.md"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Agent format compatibility notes
 # ─────────────────────────────────────────────────────────────────────────────
-# All four harnesses use markdown files with YAML frontmatter for agents.
+# Harnesses use markdown files with YAML frontmatter for agents.
 # However, the frontmatter keys differ:
 #
 #   Claude Code:  name, description, tools (comma-separated caps), model, maxTurns

@@ -55,6 +55,15 @@ install_codex() {
     link "$REPO_DIR/harness/codex/config.toml"       "$target/config.toml"
 }
 
+install_droid() {
+    local target="$HOME/.factory"
+    echo "  Target: $target"
+    mkdir -p "$target"
+
+    link_children "$REPO_DIR/skills"                 "$target/skills"
+    link "$REPO_DIR/AGENTS.md"                       "$target/AGENTS.md"
+}
+
 install_pi() {
     local settings_file="${PI_SETTINGS_FILE:-$HOME/.pi/agent/settings.json}"
     local package_path="$REPO_DIR/packages/quality-autoresearch"
@@ -167,6 +176,7 @@ usage() {
     echo "  forge      ForgeCode   (~/forge/)"
     echo "  opencode   OpenCode    (~/.config/opencode/)"
     echo "  codex      Codex CLI   (~/.codex/)"
+    echo "  droid      Factory.ai Droid (~/.factory/)"
     echo "  pi         Pi packages (~/.pi/agent/settings.json)"
     echo "  all        All harnesses"
     echo ""
@@ -177,7 +187,7 @@ usage() {
     echo "  $0                 # Interactive: select harnesses"
 }
 
-ALL_HARNESSES=(claude forge opencode codex pi)
+ALL_HARNESSES=(claude forge opencode codex droid pi)
 
 select_interactive() {
     echo "Which harnesses do you want to install?"
@@ -228,7 +238,7 @@ fi
 
 for harness in "${SELECTED[@]}"; do
     case "$harness" in
-        claude|forge|opencode|codex|pi)
+        claude|forge|opencode|codex|droid|pi)
             echo "Installing $harness..."
             "install_$harness"
             echo ""
