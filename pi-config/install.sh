@@ -191,6 +191,16 @@ install_extension_files() {
     local ext_name ext_target
     ext_name="$(basename "$ext_source")"
     ext_target="$target_root/$ext_name"
+
+    if [ "$MODE" = "symlink" ] && same_link "$ext_target" "$ext_source"; then
+      log "KEEP extensions/$ext_name"
+      continue
+    fi
+
+    if [ -L "$ext_target" ]; then
+      backup_target "$ext_target" "extensions/$ext_name"
+    fi
+
     mkdir -p "$ext_target"
 
     find "$ext_source" -mindepth 1 -maxdepth 1 | sort | while read -r item_source; do
