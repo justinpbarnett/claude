@@ -97,6 +97,26 @@ skills = "skills"
 "AGENTS.md" = "AGENTS.md"
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Pi
+# Docs: https://github.com/mariozechner/pi
+# ─────────────────────────────────────────────────────────────────────────────
+[pi]
+target = "~/.pi/agent"
+supports_hooks = false
+supports_plugins = true
+supports_rules = false
+guidelines_file = "AGENTS.md"
+config_format = "json"
+
+[pi.symlinks]
+skills = "skills"
+"settings.json" = "pi-config/settings.json"
+"models.json" = "pi-config/models.json"
+"keybindings.json" = "pi-config/keybindings.json"
+"autoresearch.config.json" = "pi-config/autoresearch.config.json"
+extensions = "pi-config/extensions"
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Agent format compatibility notes
 # ─────────────────────────────────────────────────────────────────────────────
 # Harnesses use markdown files with YAML frontmatter for agents.

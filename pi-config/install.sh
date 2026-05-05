@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 MODE="symlink"
 RUN_NPM=1
@@ -78,12 +79,40 @@ same_link() {
   [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]
 }
 
+is_managed_link() {
+  local target="$1"
+
+  [ -L "$target" ] || return 1
+
+  local dest
+  dest="$(readlink "$target")"
+  case "$dest" in
+    "$SCRIPT_DIR"|"$SCRIPT_DIR"/*|"$REPO_DIR/skills"|"$REPO_DIR/skills"/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+remove_stale_link() {
+  local rel="$1"
+  local target="$2"
+
+  if is_managed_link "$target"; then
+    rm "$target"
+    log "REMOVE $rel"
+  fi
+}
+
 install_file() {
   local rel="$1"
   local source="$SCRIPT_DIR/$rel"
   local target="$TARGET_DIR/$rel"
 
   if [ ! -f "$source" ]; then
+    remove_stale_link "$rel" "$target"
     return
   fi
 
@@ -117,7 +146,12 @@ install_dir() {
   local source="$SCRIPT_DIR/$rel"
   local target="$TARGET_DIR/$rel"
 
+  if [ "$rel" = "skills" ] && [ ! -d "$source" ]; then
+    source="$REPO_DIR/skills"
+  fi
+
   if [ ! -d "$source" ]; then
+    remove_stale_link "$rel" "$target"
     return
   fi
 
@@ -195,6 +229,32 @@ install_extension_files() {
   done
 }
 
+cleanup_stale_extension_links() {
+  local target_root="$TARGET_DIR/extensions"
+
+  [ -d "$target_root" ] || return
+
+  find "$target_root" -mindepth 2 -maxdepth 2 -type l | sort | while read -r item_target; do
+    local dest rel
+    dest="$(readlink "$item_target")"
+    case "$dest" in
+      "$SCRIPT_DIR/extensions"/*)
+        if [ ! -e "$dest" ]; then
+          rel="${item_target#$TARGET_DIR/}"
+          rm "$item_target"
+          log "REMOVE $rel"
+        fi
+        ;;
+    esac
+  done
+
+  find "$target_root" -mindepth 1 -maxdepth 1 -type d | sort | while read -r ext_target; do
+    local rel
+    rel="extensions/$(basename "$ext_target")"
+    rmdir "$ext_target" 2>/dev/null && log "RMDIR $rel" || true
+  done
+}
+
 install_extension_deps() {
   local target_root="$TARGET_DIR/extensions"
 
@@ -259,6 +319,7 @@ for rel in "${TOP_LEVEL_DIRS[@]}"; do
 done
 
 install_extension_files
+cleanup_stale_extension_links
 install_extension_deps
 
 if [ "$BACKUP_USED" -eq 1 ]; then

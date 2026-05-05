@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TARGET_DIR="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
 REMOVE_EMPTY_DIRS=1
 DRY_RUN=0
@@ -47,7 +48,7 @@ is_managed_link() {
   local dest
   dest="$(readlink "$target")"
   case "$dest" in
-    "$SCRIPT_DIR"|"$SCRIPT_DIR"/*)
+    "$SCRIPT_DIR"|"$SCRIPT_DIR"/*|"$REPO_DIR/skills"|"$REPO_DIR/skills"/*)
       return 0
       ;;
     *)
