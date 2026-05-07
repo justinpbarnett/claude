@@ -151,7 +151,7 @@
       }
     }
   },
-  "effortLevel": "medium",
+  "effortLevel": "xhigh",
   "autoCompactWindow": 200000,
   "skipDangerousModePermissionPrompt": true,
   "voiceEnabled": true
