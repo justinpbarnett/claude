@@ -19,6 +19,7 @@ Current portable extensions:
 - `fireworks`
 - `inline-slash-autocomplete`
 - `stash-draft`
+- `subagent`
 - `web-scrape`
 - `web-search`
 
