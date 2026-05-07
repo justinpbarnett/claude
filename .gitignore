@@ -1,7 +1,6 @@
 *.bak.*
 .DS_Store
 .pytest_cache/
-skills/omarchy
 plugins/cache/
 plugins/data/
 plugins/installed_plugins.json

@@ -58,6 +58,7 @@ These are intentionally local to this repo and do not need to match Matt's upstr
 - `deep-audit` — comprehensive multi-angle code audit
 - `find-skills` — this skill; documents JPB's local skill setup and discovery process
 - `humanize` — remove AI-writing tells and make text sound more natural
+- `omarchy` — administer, troubleshoot, and customize JPB's Omarchy/Arch/Hyprland desktop
 - `setup-jpb-skills` — JPB-specific per-repo setup for issue tracker, triage labels, and domain docs
 
 Keep these unless the user explicitly asks to remove them.
@@ -102,6 +103,7 @@ Examples:
 - Broad quality review → `deep-audit`
 - Need brevity → `caveman`
 - Make writing sound less AI-generated → `humanize`
+- Omarchy/Arch/Hyprland desktop work → `omarchy`
 
 ### 3. If no installed skill fits, search upstream
 
@@ -118,12 +120,12 @@ For non-Matt skills, use web/search or the relevant ecosystem only after confirm
 
 ### 4. Adding or syncing skills
 
-For Matt engineering/productivity syncs, preserve local/custom JPB skills. In particular, do not overwrite `contribute`, `deep-audit`, `find-skills`, `humanize`, or `setup-jpb-skills`, and do not replace `setup-jpb-skills` with upstream `setup-matt-pocock-skills` unless the user explicitly asks to revert to upstream.
+For Matt engineering/productivity syncs, preserve local/custom JPB skills. In particular, do not overwrite `contribute`, `deep-audit`, `find-skills`, `humanize`, `omarchy`, or `setup-jpb-skills`, and do not replace `setup-jpb-skills` with upstream `setup-matt-pocock-skills` unless the user explicitly asks to revert to upstream.
 
 ```bash
 remote=/tmp/matt-skills
 repo=/home/jpb/dev/ai
-preserve='^(contribute|deep-audit|find-skills|humanize|setup-jpb-skills)$'
+preserve='^(contribute|deep-audit|find-skills|humanize|omarchy|setup-jpb-skills)$'
 for category in engineering productivity; do
   for src in "$remote/skills/$category"/*; do
     name=$(basename "$src")
@@ -153,5 +155,5 @@ Remove global links for deleted skills so Pi does not expose stale capabilities.
 - This repo is the source of truth.
 - Matt upstream-synced skills should remain exact upstream copies.
 - Do not edit upstream-synced Matt skills directly unless the user explicitly wants a fork/divergence.
-- Keep `contribute`, `deep-audit`, `find-skills`, `humanize`, and `setup-jpb-skills` as local/custom skills.
+- Keep `contribute`, `deep-audit`, `find-skills`, `humanize`, `omarchy`, and `setup-jpb-skills` as local/custom skills.
 - Do not use `npx skills add -g` as the default install path; it bypasses this repo source-of-truth setup.
