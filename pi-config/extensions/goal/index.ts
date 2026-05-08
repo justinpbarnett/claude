@@ -19,6 +19,7 @@ interface GoalState {
 	createdAt: number;
 	updatedAt: number;
 	baselineTokens: number;
+	runningStartedAt?: number | undefined;
 	budgetLimitReported?: boolean;
 }
 
@@ -104,7 +105,7 @@ function cloneGoal(goal: GoalState): GoalState {
 	return { ...goal };
 }
 
-function newGoal(objective: string, tokenBudget: number | undefined, baselineTokens: number): GoalState {
+function newGoal(objective: string, tokenBudget: number | undefined, baselineTokens: number, isRunning = false): GoalState {
 	const now = Date.now();
 	return {
 		goalId: `goal_${now}_${Math.random().toString(36).slice(2, 10)}`,
@@ -116,6 +117,7 @@ function newGoal(objective: string, tokenBudget: number | undefined, baselineTok
 		createdAt: now,
 		updatedAt: now,
 		baselineTokens,
+		runningStartedAt: isRunning ? now : undefined,
 	};
 }
 
@@ -141,16 +143,16 @@ function formatTokensCompact(value: number): string {
 
 function formatElapsedSeconds(seconds: number): string {
 	seconds = Math.max(0, Math.floor(seconds));
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	if (minutes < 60) return `${minutes}m`;
-	const hours = Math.floor(minutes / 60);
-	const remainingMinutes = minutes % 60;
-	if (hours >= 24) {
-		const days = Math.floor(hours / 24);
-		return `${days}d ${hours % 24}h ${remainingMinutes}m`;
-	}
-	return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
+	const days = Math.floor(seconds / 86400);
+	const hours = Math.floor((seconds % 86400) / 3600);
+	const minutes = Math.floor((seconds % 3600) / 60);
+	const remainingSeconds = seconds % 60;
+	const parts: string[] = [];
+	if (days > 0) parts.push(`${days}d`);
+	if (hours > 0) parts.push(`${hours}h`);
+	if (minutes > 0) parts.push(`${minutes}m`);
+	parts.push(`${remainingSeconds}s`);
+	return parts.join(" ");
 }
 
 function goalUsageSummary(goal: GoalState): string {
@@ -202,6 +204,7 @@ function toolGoal(goal: GoalState) {
 export default function (pi: ExtensionAPI) {
 	let goal: GoalState | undefined;
 	let continuationQueued = false;
+	let agentRunning = false;
 
 	function usageTokens(ctx: ExtensionContext): number {
 		return ctx.getContextUsage()?.tokens ?? 0;
@@ -210,12 +213,21 @@ export default function (pi: ExtensionAPI) {
 	function account(ctx: ExtensionContext): GoalState | undefined {
 		if (!goal) return undefined;
 		const next = cloneGoal(goal);
-		next.timeUsedSeconds = Math.max(0, Math.floor((Date.now() - next.createdAt) / 1000));
+		const now = Date.now();
+		if (next.status === "active" && agentRunning) {
+			const runningStartedAt = next.runningStartedAt ?? now;
+			const elapsedSeconds = Math.max(0, Math.floor((now - runningStartedAt) / 1000));
+			next.timeUsedSeconds = Math.max(0, next.timeUsedSeconds + elapsedSeconds);
+			next.runningStartedAt = runningStartedAt + elapsedSeconds * 1000;
+		} else {
+			next.runningStartedAt = undefined;
+		}
 		next.tokensUsed = Math.max(next.tokensUsed, usageTokens(ctx) - next.baselineTokens);
 		if (next.status === "active" && next.tokenBudget != null && next.tokensUsed >= next.tokenBudget) {
 			next.status = "budget_limited";
+			next.runningStartedAt = undefined;
 		}
-		next.updatedAt = Date.now();
+		next.updatedAt = now;
 		goal = next;
 		return next;
 	}
@@ -275,9 +287,10 @@ export default function (pi: ExtensionAPI) {
 			return;
 		}
 		const suffix = current.tokenBudget == null ? "" : ` ${formatTokensCompact(current.tokensUsed)}/${formatTokensCompact(current.tokenBudget)}`;
+		const elapsed = ` (${formatElapsedSeconds(current.timeUsedSeconds)})`;
 		const label = current.status === "budget_limited" ? "budget" : current.status;
-		ctx.ui.setStatus("goal", `goal: ${label}${suffix}`);
-		ctx.ui.setWidget("goal", [`Goal ${statusLabel(current.status)}${suffix}`, current.objective]);
+		ctx.ui.setStatus("goal", `goal: ${label}${elapsed}${suffix}`);
+		ctx.ui.setWidget("goal", [`Goal ${statusLabel(current.status)}${elapsed}${suffix}`, current.objective]);
 	}
 
 	function maybeContinue(ctx: ExtensionContext) {
@@ -295,14 +308,30 @@ export default function (pi: ExtensionAPI) {
 		}
 	}
 
-	pi.on("session_start", async (_event, ctx) => reconstruct(ctx));
-	pi.on("session_tree", async (_event, ctx) => reconstruct(ctx));
+	pi.on("session_start", async (_event, ctx) => {
+		agentRunning = false;
+		reconstruct(ctx);
+	});
+	pi.on("session_tree", async (_event, ctx) => {
+		agentRunning = false;
+		reconstruct(ctx);
+	});
 	pi.on("agent_start", async (_event, ctx) => {
+		agentRunning = true;
 		continuationQueued = false;
+		if (goal?.status === "active" && goal.runningStartedAt == null) {
+			goal = { ...goal, runningStartedAt: Date.now(), updatedAt: Date.now() };
+		}
 		refreshUi(ctx);
 	});
 	pi.on("turn_end", async (_event, ctx) => refreshUi(ctx));
-	pi.on("agent_end", async (_event, ctx) => maybeContinue(ctx));
+	pi.on("agent_end", async (_event, ctx) => {
+		maybeContinue(ctx);
+		agentRunning = false;
+		if (goal?.status === "active") goal = { ...goal, runningStartedAt: undefined, updatedAt: Date.now() };
+		if (goal) persist({ action: "update", goal: cloneGoal(goal) });
+		refreshUi(ctx);
+	});
 
 	pi.on("before_agent_start", async (event, ctx) => {
 		const current = goal ? account(ctx) : undefined;
@@ -349,9 +378,10 @@ export default function (pi: ExtensionAPI) {
 					return;
 				}
 				const status: GoalStatus = lower === "pause" ? "paused" : "active";
-				const updated = updateGoal({ status, budgetLimitReported: false });
+				account(ctx);
+				const updated = updateGoal({ status, budgetLimitReported: false, runningStartedAt: status === "active" && agentRunning ? Date.now() : undefined });
 				refreshUi(ctx);
-				if (updated) ctx.ui.notify(`Goal ${statusLabel(updated.status)}`, "info");
+				if (updated) ctx.ui.notify(`Goal ${statusLabel(updated.status)} (${formatElapsedSeconds(updated.timeUsedSeconds)})`, "info");
 				if (status === "active" && updated) pi.sendUserMessage(CONTINUATION_PROMPT(updated));
 				return;
 			}
@@ -367,10 +397,10 @@ export default function (pi: ExtensionAPI) {
 				const ok = await ctx.ui.confirm("Replace goal?", "A goal is already set. Replace the current goal?");
 				if (!ok) return;
 			}
-			const next = newGoal(trimmed, undefined, usageTokens(ctx));
+			const next = newGoal(trimmed, undefined, usageTokens(ctx), agentRunning);
 			setGoal(next);
 			refreshUi(ctx);
-			ctx.ui.notify(`Goal ${statusLabel(next.status)}`, "info");
+			ctx.ui.notify(`Goal ${statusLabel(next.status)} (${formatElapsedSeconds(next.timeUsedSeconds)})`, "info");
 			ctx.ui.notify(goalUsageSummary(next), "info");
 			pi.sendUserMessage(CONTINUATION_PROMPT(next));
 		},
@@ -417,7 +447,7 @@ export default function (pi: ExtensionAPI) {
 			const error = validateObjective(objective);
 			if (error) return { content: [{ type: "text", text: error }], details: { action: "set", error } as GoalMutation, isError: true };
 			const tokenBudget = params.token_budget && params.token_budget > 0 ? params.token_budget : undefined;
-			const next = newGoal(objective, tokenBudget, usageTokens(ctx));
+			const next = newGoal(objective, tokenBudget, usageTokens(ctx), agentRunning);
 			setGoal(next, false);
 			refreshUi(ctx);
 			return {
@@ -431,7 +461,7 @@ export default function (pi: ExtensionAPI) {
 		name: "update_goal",
 		label: "Update Goal",
 		description:
-			"Update the existing goal. Use this tool only to mark the goal achieved. Set status to `complete` only when the objective has actually been achieved and no required work remains. Do not mark a goal complete merely because its budget is nearly exhausted or because you are stopping work. You cannot use this tool to pause, resume, or budget-limit a goal; those status changes are controlled by the user or system. When marking a budgeted goal achieved with status `complete`, report the final token usage from the tool result to the user.",
+			"Update the existing goal. Use this tool only to mark the goal achieved. Set status to `complete` only when the objective has actually been achieved and no required work remains. Do not mark a goal complete merely because the budget is nearly exhausted or because you are stopping work. You cannot use this tool to pause, resume, or budget-limit a goal; those status changes are controlled by the user or system. When marking a goal achieved with status `complete`, report the final elapsed time and token usage from the tool result to the user.",
 		promptSnippet: "Mark the persisted /goal complete only after full verification.",
 		promptGuidelines: [
 			"Use update_goal only to mark the active /goal complete after the objective is achieved and no required work remains.",
@@ -449,14 +479,14 @@ export default function (pi: ExtensionAPI) {
 				return { content: [{ type: "text", text }], details: { action: "update", error: text } as GoalMutation, isError: true };
 			}
 			account(ctx);
-			const updated = updateGoal({ status: "complete" }, false)!;
+			const updated = updateGoal({ status: "complete", runningStartedAt: undefined }, false)!;
 			continuationQueued = false;
 			refreshUi(ctx);
 			return {
 				content: [
 					{
 						type: "text",
-						text: `Goal achieved. Report final budget usage to the user: tokens used: ${updated.tokensUsed}${updated.tokenBudget == null ? "." : ` of ${updated.tokenBudget}.`}`,
+						text: `Goal achieved. Report final usage to the user: elapsed time: ${formatElapsedSeconds(updated.timeUsedSeconds)}; tokens used: ${updated.tokensUsed}${updated.tokenBudget == null ? "." : ` of ${updated.tokenBudget}.`}`,
 					},
 				],
 				details: { action: "update", goal: cloneGoal(updated) } as GoalMutation,
