@@ -155,8 +155,29 @@ function formatElapsedSeconds(seconds: number): string {
 	return parts.join(" ");
 }
 
+function summarizeObjective(objective: string): string {
+	const cleanedLines = objective
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter(Boolean);
+
+	const heading = cleanedLines.find((line) => /^#{1,3}\s+\S/.test(line));
+	const candidate = (heading ? heading.replace(/^#{1,3}\s+/, "") : cleanedLines[0] ?? "Goal")
+		.replace(/^[-*]\s+/, "")
+		.replace(/^Goal:\s*/i, "")
+		.replace(/^Objective:\s*/i, "")
+		.replace(/^Implement the following\s+/i, "")
+		.replace(/^sprint task:\s*$/i, "Sprint task")
+		.replace(/\s+/g, " ")
+		.trim();
+
+	const words = candidate.split(/\s+/).filter(Boolean).slice(0, 6).join(" ");
+	const summary = words || "Goal";
+	return summary.length > 48 ? `${summary.slice(0, 45).trimEnd()}...` : summary;
+}
+
 function goalUsageSummary(goal: GoalState): string {
-	const parts = [`Objective: ${goal.objective}`];
+	const parts = [`Goal: ${summarizeObjective(goal.objective)}`];
 	if (goal.timeUsedSeconds > 0) parts.push(`Time: ${formatElapsedSeconds(goal.timeUsedSeconds)}.`);
 	if (goal.tokenBudget != null) {
 		parts.push(`Tokens: ${formatTokensCompact(goal.tokensUsed)}/${formatTokensCompact(goal.tokenBudget)}.`);
@@ -205,6 +226,7 @@ export default function (pi: ExtensionAPI) {
 	let goal: GoalState | undefined;
 	let continuationQueued = false;
 	let agentRunning = false;
+	let refreshTimer: ReturnType<typeof setInterval> | undefined;
 
 	function usageTokens(ctx: ExtensionContext): number {
 		return ctx.getContextUsage()?.tokens ?? 0;
@@ -279,18 +301,31 @@ export default function (pi: ExtensionAPI) {
 		refreshUi(ctx);
 	}
 
+	function updateTicker(ctx: ExtensionContext, current: GoalState | undefined) {
+		const shouldTick = !!current && current.status === "active" && agentRunning;
+		if (shouldTick && !refreshTimer) {
+			refreshTimer = setInterval(() => refreshUi(ctx), 1000);
+			(refreshTimer as { unref?: () => void }).unref?.();
+		}
+		if (!shouldTick && refreshTimer) {
+			clearInterval(refreshTimer);
+			refreshTimer = undefined;
+		}
+	}
+
 	function refreshUi(ctx: ExtensionContext) {
 		const current = goal ? account(ctx) : undefined;
 		if (!current) {
 			ctx.ui.setStatus("goal", "");
 			ctx.ui.setWidget("goal", []);
+			updateTicker(ctx, undefined);
 			return;
 		}
 		const suffix = current.tokenBudget == null ? "" : ` ${formatTokensCompact(current.tokensUsed)}/${formatTokensCompact(current.tokenBudget)}`;
 		const elapsed = ` (${formatElapsedSeconds(current.timeUsedSeconds)})`;
-		const label = current.status === "budget_limited" ? "budget" : current.status;
-		ctx.ui.setStatus("goal", `goal: ${label}${elapsed}${suffix}`);
-		ctx.ui.setWidget("goal", [`Goal ${statusLabel(current.status)}${elapsed}${suffix}`, current.objective]);
+		ctx.ui.setStatus("goal", "");
+		ctx.ui.setWidget("goal", [`Goal ${statusLabel(current.status)}${elapsed}${suffix}`, summarizeObjective(current.objective)]);
+		updateTicker(ctx, current);
 	}
 
 	function maybeContinue(ctx: ExtensionContext) {
@@ -315,6 +350,12 @@ export default function (pi: ExtensionAPI) {
 	pi.on("session_tree", async (_event, ctx) => {
 		agentRunning = false;
 		reconstruct(ctx);
+	});
+	pi.on("session_shutdown", async () => {
+		if (refreshTimer) {
+			clearInterval(refreshTimer);
+			refreshTimer = undefined;
+		}
 	});
 	pi.on("agent_start", async (_event, ctx) => {
 		agentRunning = true;

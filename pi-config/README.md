@@ -17,6 +17,7 @@ Tracked items are copied from or linked into the target pi config directory:
 Current portable extensions:
 
 - `fireworks`
+- `goal`
 - `inline-slash-autocomplete`
 - `stash-draft`
 - `subagent`
