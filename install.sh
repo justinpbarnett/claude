@@ -13,9 +13,10 @@ install_claude() {
     echo "  Target: $target"
     mkdir -p "$target"
 
+    unlink_repo_symlink "$target/agents" "$REPO_DIR/agents"
+    unlink_repo_symlink "$target/hooks" "$REPO_DIR/hooks"
+
     link "$REPO_DIR/skills"                       "$target/skills"
-    link "$REPO_DIR/agents"                       "$target/agents"
-    link "$REPO_DIR/hooks"                        "$target/hooks"
     link "$REPO_DIR/rules"                        "$target/rules"
     link "$REPO_DIR/plugins"                      "$target/plugins"
     link "$REPO_DIR/AGENTS.md"                    "$target/CLAUDE.md"
@@ -101,6 +102,18 @@ PY
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
 
+unlink_repo_symlink() {
+    local target="$1"
+    local source="$2"
+    local name
+    name="$(basename "$target")"
+
+    if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
+        rm "$target"
+        echo "    REMOVED stale $name -> $source"
+    fi
+}
+
 link() {
     local source="$1"
     local target="$2"
@@ -144,6 +157,20 @@ link_children() {
     fi
 
     mkdir -p "$target_dir"
+
+    for target in "$target_dir"/*; do
+        [ -e "$target" ] || continue
+        [ -L "$target" ] || continue
+        link_dest="$(readlink "$target")"
+        case "$link_dest" in
+            "$source_dir"/*)
+                if [ ! -e "$link_dest" ]; then
+                    echo "    REMOVED stale $(basename "$target") -> $link_dest"
+                    rm "$target"
+                fi
+                ;;
+        esac
+    done
 
     for source in "$source_dir"/*; do
         [ -e "$source" ] || continue

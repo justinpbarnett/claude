@@ -28,6 +28,9 @@ trust_level = "trusted"
 [projects."/Users/justin.barnett/dev/enver/Survival"]
 trust_level = "trusted"
 
+[projects."/Users/justin.barnett/dev/passion/passion-os"]
+trust_level = "trusted"
+
 [tui.model_availability_nux]
 "gpt-5.5" = 4
 

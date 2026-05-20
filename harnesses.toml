@@ -11,7 +11,7 @@
 # ─────────────────────────────────────────────────────────────────────────────
 [claude]
 target = "~/.claude"
-supports_hooks = true
+supports_hooks = true         # Supported by Claude, intentionally unused in this minimal profile
 supports_plugins = true
 supports_rules = true
 guidelines_file = "CLAUDE.md" # Claude reads CLAUDE.md, not AGENTS.md
@@ -19,8 +19,6 @@ config_format = "json"        # settings.json
 
 [claude.symlinks]
 skills = "skills"
-agents = "agents"
-hooks = "hooks"
 rules = "rules"
 plugins = "plugins"
 "CLAUDE.md" = "AGENTS.md"                        # Our shared AGENTS.md → their CLAUDE.md

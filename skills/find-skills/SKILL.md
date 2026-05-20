@@ -10,14 +10,15 @@ This repo is the source of truth for JPB's installed skills.
 Canonical skill directory:
 
 ```text
-/home/jpb/dev/ai/skills
+~/dev/ai/skills
 ```
 
 Compatibility links point back here:
 
 ```text
-~/.agents/skills/<skill> -> /home/jpb/dev/ai/skills/<skill>
-~/.pi/agent/skills/<skill> -> /home/jpb/dev/ai/skills/<skill>
+~/.agents/skills/<skill> -> ~/dev/ai/skills/<skill>
+~/.pi/agent/skills/<skill> -> ~/dev/ai/skills/<skill>
+~/.codex/skills/<skill> -> ~/dev/ai/skills/<skill>   (via install.sh codex)
 ```
 
 Do **not** install or update skills directly into `~/.agents/skills` or `~/.pi/agent/skills`. If a skill is added or changed, update this repo first, then ensure those global links point back to the repo copy.
@@ -58,7 +59,6 @@ These are intentionally local to this repo and do not need to match Matt's upstr
 - `deep-audit` — comprehensive multi-angle code audit
 - `find-skills` — this skill; documents JPB's local skill setup and discovery process
 - `humanize` — remove AI-writing tells and make text sound more natural
-- `omarchy` — administer, troubleshoot, and customize JPB's Omarchy/Arch/Hyprland desktop
 - `setup-jpb-skills` — JPB-specific per-repo setup for issue tracker, triage labels, and domain docs
 
 Keep these unless the user explicitly asks to remove them.
@@ -80,7 +80,7 @@ Use this skill when the user:
 List available skills from the repo source of truth:
 
 ```bash
-find /home/jpb/dev/ai/skills -maxdepth 2 -name SKILL.md -printf '%h\n' | sed 's#^/home/jpb/dev/ai/skills/##' | sort
+find ~/dev/ai/skills -mindepth 1 -maxdepth 1 -type d | xargs -I{} basename {} | sort
 ```
 
 Read likely candidates' `SKILL.md` files before recommending them.
@@ -103,7 +103,6 @@ Examples:
 - Broad quality review → `deep-audit`
 - Need brevity → `caveman`
 - Make writing sound less AI-generated → `humanize`
-- Omarchy/Arch/Hyprland desktop work → `omarchy`
 
 ### 3. If no installed skill fits, search upstream
 
@@ -120,12 +119,12 @@ For non-Matt skills, use web/search or the relevant ecosystem only after confirm
 
 ### 4. Adding or syncing skills
 
-For Matt engineering/productivity syncs, preserve local/custom JPB skills. In particular, do not overwrite `contribute`, `deep-audit`, `find-skills`, `humanize`, `omarchy`, or `setup-jpb-skills`, and do not replace `setup-jpb-skills` with upstream `setup-matt-pocock-skills` unless the user explicitly asks to revert to upstream.
+For Matt engineering/productivity syncs, preserve local/custom JPB skills. In particular, do not overwrite `contribute`, `deep-audit`, `find-skills`, `humanize`, or `setup-jpb-skills`, and do not replace `setup-jpb-skills` with upstream `setup-matt-pocock-skills` unless the user explicitly asks to revert to upstream.
 
 ```bash
 remote=/tmp/matt-skills
-repo=/home/jpb/dev/ai
-preserve='^(contribute|deep-audit|find-skills|humanize|omarchy|setup-jpb-skills)$'
+repo=~/dev/ai
+preserve='^(contribute|deep-audit|find-skills|humanize|setup-jpb-skills)$'
 for category in engineering productivity; do
   for src in "$remote/skills/$category"/*; do
     name=$(basename "$src")
@@ -141,10 +140,10 @@ done
 Then maintain compatibility links:
 
 ```bash
-for path in /home/jpb/dev/ai/skills/*; do
+for path in ~/dev/ai/skills/*; do
   skill=$(basename "$path")
-  ln -sfn "/home/jpb/dev/ai/skills/$skill" "$HOME/.agents/skills/$skill"
-  ln -sfn "/home/jpb/dev/ai/skills/$skill" "$HOME/.pi/agent/skills/$skill"
+  ln -sfn "$HOME/dev/ai/skills/$skill" "$HOME/.agents/skills/$skill"
+  ln -sfn "$HOME/dev/ai/skills/$skill" "$HOME/.pi/agent/skills/$skill"
 done
 ```
 
@@ -155,5 +154,5 @@ Remove global links for deleted skills so Pi does not expose stale capabilities.
 - This repo is the source of truth.
 - Matt upstream-synced skills should remain exact upstream copies.
 - Do not edit upstream-synced Matt skills directly unless the user explicitly wants a fork/divergence.
-- Keep `contribute`, `deep-audit`, `find-skills`, `humanize`, `omarchy`, and `setup-jpb-skills` as local/custom skills.
+- Keep `contribute`, `deep-audit`, `find-skills`, `humanize`, and `setup-jpb-skills` as local/custom skills.
 - Do not use `npx skills add -g` as the default install path; it bypasses this repo source-of-truth setup.

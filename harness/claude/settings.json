@@ -1,7 +1,6 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_CODE_SESSIONEND_HOOKS_TIMEOUT_MS": "15000",
     "CLAUDE_CODE_NO_FLICKER": "1",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
     "ENABLE_TOOL_SEARCH": "true"
@@ -11,113 +10,6 @@
     "pr": ""
   },
   "enableAllProjectMcpServers": true,
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/validate-commit.sh",
-            "timeout": 10,
-            "statusMessage": "Validating commit message..."
-          }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "matcher": "Write|Edit",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/auto-format.sh",
-            "timeout": 30,
-            "statusMessage": "Auto-formatting..."
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/check-emdash.sh",
-            "timeout": 5,
-            "statusMessage": "Checking for emdashes..."
-          },
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/post-edit-lint.sh",
-            "timeout": 30,
-            "statusMessage": "Linting..."
-          }
-        ]
-      },
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/track-commits.sh",
-            "timeout": 10,
-            "statusMessage": "Tracking commit..."
-          }
-        ]
-      },
-      {
-        "matcher": "Bash|Read|Write|Edit|Glob|Grep|Skill|Agent",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/dev/workshop/data/sentinel/scripts/sentinel-log.sh",
-            "timeout": 5
-          }
-        ]
-      }
-    ],
-    "TeammateIdle": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/teammate-idle-lint.sh",
-            "timeout": 30,
-            "statusMessage": "Linting teammate changes..."
-          }
-        ]
-      }
-    ],
-    "TaskCompleted": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/.claude/hooks/track-tasks.sh",
-            "timeout": 10,
-            "statusMessage": "Tracking task completion..."
-          }
-        ]
-      }
-    ],
-    "Stop": [],
-    "StopFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "~/dev/workshop/data/sentinel/scripts/sentinel-stop-failure.sh",
-            "timeout": 10
-          }
-        ]
-      }
-    ],
-    "Notification": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "echo '{\"continue\": false}'"
-          }
-        ]
-      }
-    ]
-  },
   "enabledPlugins": {
     "github@claude-plugins-official": true,
     "frontend-design@claude-plugins-official": true,
@@ -154,5 +46,6 @@
   "effortLevel": "xhigh",
   "autoCompactWindow": 200000,
   "skipDangerousModePermissionPrompt": true,
+  "skipAutoPermissionPrompt": true,
   "voiceEnabled": true
 }

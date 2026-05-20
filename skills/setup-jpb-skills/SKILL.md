@@ -19,11 +19,11 @@ This is a prompt-driven skill, not a deterministic script. Explore, present what
 
 ### 0. Sync Matt Pocock skills
 
-Before configuring the target repo, check whether the local JPB skill repo is available at `/home/jpb/dev/ai`. If it is, offer to sync Matt Pocock's upstream skills.
+Before configuring the target repo, check whether the local JPB skill repo is available at `~/dev/ai`. If it is, offer to sync Matt Pocock's upstream skills.
 
 Explain:
 
-> JPB's skill repo keeps selected Matt Pocock engineering/productivity skills as repo-managed copies. Syncing means: pull Matt's latest `main`, update text for installed upstream-synced skills, remove any installed upstream skill that Matt has moved to `deprecated/`, and ask before adding upstream skills that are available but not installed yet. Local JPB skills (`contribute`, `deep-audit`, `find-skills`, `humanize`, `omarchy`, `setup-jpb-skills`) are preserved.
+> JPB's skill repo keeps selected Matt Pocock engineering/productivity skills as repo-managed copies. Syncing means: pull Matt's latest `main`, update text for installed upstream-synced skills, remove any installed upstream skill that Matt has moved to `deprecated/`, and ask before adding upstream skills that are available but not installed yet. Local JPB skills (`contribute`, `deep-audit`, `find-skills`, `humanize`, `setup-jpb-skills`) are preserved.
 
 Ask the user whether to run the sync. If yes:
 
@@ -37,9 +37,9 @@ Ask the user whether to run the sync. If yes:
 2. Discover upstream sets:
 
    ```bash
-   find /tmp/matt-skills/skills/engineering /tmp/matt-skills/skills/productivity -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
-   find /tmp/matt-skills/skills/deprecated -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
-   find /home/jpb/dev/ai/skills -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort
+   find /tmp/matt-skills/skills/engineering /tmp/matt-skills/skills/productivity -mindepth 1 -maxdepth 1 -type d | xargs -I{} basename {} | sort
+   find /tmp/matt-skills/skills/deprecated -mindepth 1 -maxdepth 1 -type d 2>/dev/null | xargs -I{} basename {} | sort
+   find ~/dev/ai/skills -mindepth 1 -maxdepth 1 -type d | xargs -I{} basename {} | sort
    ```
 
 3. Preserve these local JPB skills regardless of upstream state:
@@ -49,23 +49,22 @@ Ask the user whether to run the sync. If yes:
    deep-audit
    find-skills
    humanize
-   omarchy
    setup-jpb-skills
    ```
 
-4. For installed skills that are present in Matt's `engineering/` or `productivity/`, replace the local copy with the upstream directory, except do **not** replace preserved local JPB skills (`contribute`, `deep-audit`, `find-skills`, `humanize`, `omarchy`, `setup-jpb-skills`) or replace `setup-jpb-skills` with upstream `setup-matt-pocock-skills`.
+4. For installed skills that are present in Matt's `engineering/` or `productivity/`, replace the local copy with the upstream directory, except do **not** replace preserved local JPB skills (`contribute`, `deep-audit`, `find-skills`, `humanize`, `setup-jpb-skills`) or replace `setup-jpb-skills` with upstream `setup-matt-pocock-skills`.
 
-5. For installed skills that are present in Matt's `deprecated/`, remove them from `/home/jpb/dev/ai/skills` and remove matching compatibility links from `~/.agents/skills` and `~/.pi/agent/skills`, unless they are one of the preserved local JPB skills.
+5. For installed skills that are present in Matt's `deprecated/`, remove them from `~/dev/ai/skills` and remove matching compatibility links from `~/.agents/skills`, `~/.pi/agent/skills`, and `~/.codex/skills`, unless they are one of the preserved local JPB skills.
 
 6. For upstream engineering/productivity skills that are not currently installed, show the list to the user and ask which to add. Do not add all automatically.
 
 7. After changes, verify upstream-synced skills are exact copies with `diff -qr`, and maintain compatibility links:
 
    ```bash
-   for path in /home/jpb/dev/ai/skills/*; do
+   for path in ~/dev/ai/skills/*; do
      skill=$(basename "$path")
-     ln -sfn "/home/jpb/dev/ai/skills/$skill" "$HOME/.agents/skills/$skill"
-     ln -sfn "/home/jpb/dev/ai/skills/$skill" "$HOME/.pi/agent/skills/$skill"
+     ln -sfn "$HOME/dev/ai/skills/$skill" "$HOME/.agents/skills/$skill"
+     ln -sfn "$HOME/dev/ai/skills/$skill" "$HOME/.pi/agent/skills/$skill"
    done
    ```
 
