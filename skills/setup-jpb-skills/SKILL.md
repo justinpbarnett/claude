@@ -1,19 +1,18 @@
 ---
 name: setup-jpb-skills
-description: Syncs JPB's repo-managed Matt Pocock skills, then sets up an `## Agent skills` block in AGENTS.md/CLAUDE.md and `docs/agents/` so JPB's skills know the repo's issue tracker, triage label vocabulary, and domain doc layout. Run before first use of `to-issues`, `to-prd`, `triage`, `diagnose`, `tdd`, `improve-codebase-architecture`, or `zoom-out` — or if those skills appear to be missing repo context.
+description: Syncs JPB's repo-managed Matt Pocock skills (preserving local ones), then (for a target project) scaffolds issue-tracker / triage-label / domain-doc configuration so JPB's engineering skills know where work is tracked and how the repo is organized. Run in a project before first use of `to-issues`, `to-prd`, `triage`, `diagnose`, `tdd`, `improve-codebase-architecture`, or `zoom-out`.
 disable-model-invocation: true
 ---
 
 # Setup JPB Skills
 
-Scaffold the per-repo configuration that JPB's engineering skills assume, and optionally sync the repo-managed Matt Pocock skills before doing so:
+Optionally sync JPB's repo-managed Matt Pocock skills (preserving local custom ones), then for a *target project repo* scaffold the configuration that JPB's engineering skills expect:
 
-- **Matt Pocock skill sync** — refresh upstream engineering/productivity skills, remove upstream skills that Matt deprecated, and ask whether to add newly available upstream skills not already installed.
-- **Issue tracker** — where issues live. Default to GitHub when the repo has a GitHub remote; local markdown and other trackers are also supported.
-- **Triage labels** — the strings used for the five canonical triage roles.
-- **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them.
+- **Issue tracker** — where issues live (GitHub, GitLab, local .scratch/ markdown, or other).
+- **Triage labels** — mapping for the five canonical roles used by the `triage` skill.
+- **Domain docs** — whether the repo uses a single root CONTEXT.md + docs/adr/ or a multi-context layout via CONTEXT-MAP.md.
 
-This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
+This skill no longer assumes or creates AGENTS.md/CLAUDE.md "Agent skills" blocks or a docs/agents/ directory in the JPB harness source repo itself (~/dev/ai). It can still be used to configure *other* client projects if desired. This is a prompt-driven skill. Explore, present findings, confirm, then write.
 
 ## Process
 
@@ -54,19 +53,11 @@ Ask the user whether to run the sync. If yes:
 
 4. For installed skills that are present in Matt's `engineering/` or `productivity/`, replace the local copy with the upstream directory, except do **not** replace preserved local JPB skills (`contribute`, `deep-audit`, `find-skills`, `humanize`, `setup-jpb-skills`) or replace `setup-jpb-skills` with upstream `setup-matt-pocock-skills`.
 
-5. For installed skills that are present in Matt's `deprecated/`, remove them from `~/dev/ai/skills` and remove matching compatibility links from `~/.agents/skills`, `~/.pi/agent/skills`, and `~/.codex/skills`, unless they are one of the preserved local JPB skills.
+5. For installed skills that are present in Matt's `deprecated/`, remove them from `~/dev/ai/skills` (unless they are one of the preserved local JPB skills). Re-run `./install.sh` afterward so harnesses drop the deleted skill.
 
 6. For upstream engineering/productivity skills that are not currently installed, show the list to the user and ask which to add. Do not add all automatically.
 
-7. After changes, verify upstream-synced skills are exact copies with `diff -qr`, and maintain compatibility links:
-
-   ```bash
-   for path in ~/dev/ai/skills/*; do
-     skill=$(basename "$path")
-     ln -sfn "$HOME/dev/ai/skills/$skill" "$HOME/.agents/skills/$skill"
-     ln -sfn "$HOME/dev/ai/skills/$skill" "$HOME/.pi/agent/skills/$skill"
-   done
-   ```
+7. After changes, verify upstream-synced skills are exact copies with `diff -qr`, then run `./install.sh all` (or the relevant harnesses) so the updated skill set is symlinked into Claude, Pi, Codex, etc.
 
 8. Present a concise summary: updated, removed-as-deprecated, newly-added, skipped, and preserved-local.
 
@@ -77,10 +68,8 @@ If the user declines sync, continue to per-repo configuration.
 Look at the current repo to understand its starting state. Read whatever exists; don't assume:
 
 - `git remote -v` and `.git/config` — is this a GitHub repo? Which one?
-- `AGENTS.md` and `CLAUDE.md` at the repo root — does either exist? Is there already an `## Agent skills` section in either?
-- `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root
+- `CONTEXT.md` and `CONTEXT-MAP.md` at the repo root (note: the JPB harness source repo ~/dev/ai itself no longer uses AGENTS.md, CLAUDE.md, or docs/agents/)
 - `docs/adr/` and any `src/*/docs/adr/` directories
-- `docs/agents/` — does this skill's prior output already exist?
 - `.scratch/` — sign that a local-markdown issue tracker convention is already in use
 
 ### 2. Present findings and ask
@@ -125,53 +114,21 @@ Confirm the layout:
 
 ### 3. Confirm and edit
 
-Show the user a draft of:
+For client projects that still use the old convention, you may offer to create:
 
-- The `## Agent skills` block to add to whichever of `CLAUDE.md` / `AGENTS.md` is being edited (see step 4 for selection rules)
-- The contents of `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`, `docs/agents/domain.md`
+- An `## Agent skills` section in the project's CLAUDE.md or AGENTS.md (if present)
+- `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`, `docs/agents/domain.md`
 
-Let them edit before writing.
+The JPB harness source repo (`~/dev/ai`) itself no longer uses or ships AGENTS.md, CLAUDE.md at root, or docs/agents/.
 
-### 4. Write
+Present drafts of the configuration files the engineering skills actually consume (the three docs under docs/agents/ or equivalent) and let the user edit.
 
-**Pick the file to edit:**
+### 4. Write (client projects only)
 
-- If `CLAUDE.md` exists, edit it.
-- Else if `AGENTS.md` exists, edit it.
-- If neither exists, ask the user which one to create — don't pick for them.
+Only write the old-style docs/agents/ files and/or update a guidelines file if the *target project* still expects them. The templates in this directory (issue-tracker-*.md, triage-labels.md, domain.md) remain available as seeds.
 
-Never create `AGENTS.md` when `CLAUDE.md` already exists (or vice versa) — always edit the one that's already there.
-
-If an `## Agent skills` block already exists in the chosen file, update its contents in-place rather than appending a duplicate. Don't overwrite user edits to the surrounding sections.
-
-The block:
-
-```markdown
-## Agent skills
-
-### Issue tracker
-
-[one-line summary of where issues are tracked]. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-[one-line summary of the label vocabulary]. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-[one-line summary of layout — "single-context" or "multi-context"]. See `docs/agents/domain.md`.
-```
-
-Then write the three docs files using the seed templates in this skill folder as a starting point:
-
-- [issue-tracker-github.md](./issue-tracker-github.md) — GitHub issue tracker
-- [issue-tracker-gitlab.md](./issue-tracker-gitlab.md) — GitLab issue tracker
-- [issue-tracker-local.md](./issue-tracker-local.md) — local-markdown issue tracker
-- [triage-labels.md](./triage-labels.md) — label mapping
-- [domain.md](./domain.md) — domain doc consumer rules + layout
-
-For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
+For "other" trackers, write a custom docs/agents/issue-tracker.md (or the equivalent location the user prefers).
 
 ### 5. Done
 
-Tell the user the setup is complete and which JPB engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers or restart from scratch.
+Tell the user the setup is complete for the target project. Note that the JPB harness source repo no longer maintains these files centrally — per-project setup is now optional and legacy for projects that want the explicit docs/agents/ layout.

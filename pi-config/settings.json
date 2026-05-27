@@ -6,7 +6,6 @@
   "lastChangelogVersion": "0.75.3",
   "packages": [
     "https://github.com/davebcn87/pi-autoresearch",
-    "/Users/justin.barnett/dev/ai/packages/quality-autoresearch",
     "npm:pi-xai"
   ],
   "hideThinkingBlock": true

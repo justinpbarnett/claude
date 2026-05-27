@@ -157,7 +157,7 @@ Check project standards:
 - Code style consistency
 - Import ordering
 - File naming conventions
-- Project-specific patterns (from AGENTS.md)
+- Project-specific patterns (from CLAUDE.md, AGENTS.md, or coding standards docs)
 - Language-specific best practices
 
 Report: compliance_score, violations_found

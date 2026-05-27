@@ -13,13 +13,7 @@ install_claude() {
     echo "  Target: $target"
     mkdir -p "$target"
 
-    unlink_repo_symlink "$target/agents" "$REPO_DIR/agents"
-    unlink_repo_symlink "$target/hooks" "$REPO_DIR/hooks"
-
     link "$REPO_DIR/skills"                       "$target/skills"
-    link "$REPO_DIR/rules"                        "$target/rules"
-    link "$REPO_DIR/plugins"                      "$target/plugins"
-    link "$REPO_DIR/AGENTS.md"                    "$target/CLAUDE.md"
     link "$REPO_DIR/harness/claude/settings.json" "$target/settings.json"
 }
 
@@ -28,10 +22,8 @@ install_forge() {
     echo "  Target: $target"
     mkdir -p "$target"
 
-    link "$REPO_DIR/skills"                           "$target/skills"
-    link "$REPO_DIR/harness/forge/agents"             "$target/agents"
-    link "$REPO_DIR/AGENTS.md"                        "$target/AGENTS.md"
-    link "$REPO_DIR/harness/forge/.forge.toml"        "$target/.forge.toml"
+    link "$REPO_DIR/skills"                    "$target/skills"
+    link "$REPO_DIR/harness/forge/.forge.toml" "$target/.forge.toml"
 }
 
 install_opencode() {
@@ -39,10 +31,8 @@ install_opencode() {
     echo "  Target: $target"
     mkdir -p "$target"
 
-    link "$REPO_DIR/skills"                          "$target/skills"
-    link "$REPO_DIR/agents"                          "$target/agents"
-    link "$REPO_DIR/AGENTS.md"                       "$target/AGENTS.md"
-    link "$REPO_DIR/harness/opencode/opencode.json"  "$target/opencode.json"
+    link "$REPO_DIR/skills"                         "$target/skills"
+    link "$REPO_DIR/harness/opencode/opencode.json" "$target/opencode.json"
 }
 
 install_codex() {
@@ -50,10 +40,8 @@ install_codex() {
     echo "  Target: $target"
     mkdir -p "$target"
 
-    link_children "$REPO_DIR/skills"                 "$target/skills"
-    link "$REPO_DIR/agents"                          "$target/agents"
-    link "$REPO_DIR/AGENTS.md"                       "$target/AGENTS.md"
-    link "$REPO_DIR/harness/codex/config.toml"       "$target/config.toml"
+    link_children "$REPO_DIR/skills"           "$target/skills"
+    link "$REPO_DIR/harness/codex/config.toml" "$target/config.toml"
 }
 
 install_droid() {
@@ -61,58 +49,25 @@ install_droid() {
     echo "  Target: $target"
     mkdir -p "$target"
 
-    link_children "$REPO_DIR/skills"                 "$target/skills"
-    link "$REPO_DIR/AGENTS.md"                       "$target/AGENTS.md"
+    link_children "$REPO_DIR/skills" "$target/skills"
 }
 
 install_pi() {
-    local settings_file="${PI_SETTINGS_FILE:-$HOME/.pi/agent/settings.json}"
-    local package_path="$REPO_DIR/packages/quality-autoresearch"
-    echo "  Settings: $settings_file"
-    echo "  Package: $package_path"
-    mkdir -p "$(dirname "$settings_file")"
+    local target="$HOME/.pi/agent"
+    echo "  Target: $target"
+    mkdir -p "$target"
 
-    SETTINGS_FILE="$settings_file" PACKAGE_PATH="$package_path" python - <<'PY'
-import json
-import os
-from pathlib import Path
-
-settings_path = Path(os.environ["SETTINGS_FILE"])
-package_path = os.environ["PACKAGE_PATH"]
-
-if settings_path.exists() and settings_path.read_text().strip():
-    data = json.loads(settings_path.read_text())
-else:
-    data = {}
-
-packages = data.get("packages", [])
-if not isinstance(packages, list):
-    raise SystemExit("settings.json field 'packages' exists but is not a list")
-
-if package_path not in packages:
-    packages.append(package_path)
-
-data["packages"] = packages
-settings_path.write_text(json.dumps(data, indent=2) + "\n")
-PY
-    echo "    ADDED quality-autoresearch package"
+    link "$REPO_DIR/skills"                           "$target/skills"
+    link "$REPO_DIR/pi-config/settings.json"          "$target/settings.json"
+    link "$REPO_DIR/pi-config/models.json"            "$target/models.json"
+    link "$REPO_DIR/pi-config/keybindings.json"       "$target/keybindings.json"
+    link "$REPO_DIR/pi-config/autoresearch.config.json" "$target/autoresearch.config.json"
+    link "$REPO_DIR/pi-config/extensions"             "$target/extensions"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Helpers
 # ─────────────────────────────────────────────────────────────────────────────
-
-unlink_repo_symlink() {
-    local target="$1"
-    local source="$2"
-    local name
-    name="$(basename "$target")"
-
-    if [ -L "$target" ] && [ "$(readlink "$target")" = "$source" ]; then
-        rm "$target"
-        echo "    REMOVED stale $name -> $source"
-    fi
-}
 
 link() {
     local source="$1"

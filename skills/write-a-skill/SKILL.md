@@ -27,19 +27,14 @@ description: Create new agent skills with proper structure, progressive disclosu
 
    For a global/repo-managed skill:
    - Add the skill under `~/dev/ai/skills/<skill-name>/` — this repo is the source of truth.
-   - Add/update compatibility links:
-     ```bash
-     ln -sfn "$HOME/dev/ai/skills/<skill-name>" "$HOME/.agents/skills/<skill-name>"
-     ln -sfn "$HOME/dev/ai/skills/<skill-name>" "$HOME/.pi/agent/skills/<skill-name>"
-     ```
-     Or run `./install.sh codex` to refresh `~/.codex/skills` links.
-   - Update `skills/find-skills/SKILL.md` anywhere the current skill set or local/custom skills are listed.
+   - Run `./install.sh all` (or the specific harness) to create/update symlinks so the new skill is visible in Claude, Pi, Codex, etc.
+   - Update `skills/find-skills/SKILL.md` in the current skill set or local/custom lists.
    - Update `skills/setup-jpb-skills/SKILL.md` if the new skill should be preserved during Matt Pocock upstream syncs, or if it changes setup behavior.
-   - Search for other name lists before finishing:
+   - Search for references before finishing:
      ```bash
-     grep -R "contribute\|deep-audit\|find-skills\|setup-jpb-skills\|<skill-name>" -n AGENTS.md docs skills pi-config harness 2>/dev/null
+     grep -R "contribute\|deep-audit\|find-skills\|setup-jpb-skills\|<skill-name>" -n skills pi-config harness 2>/dev/null
      ```
-   - Mention in the final response which registry/list files were updated.
+   - Mention in the final response which files were updated.
 
    For a project-local skill:
    - Do not touch `~/dev/ai/skills`, `~/.agents/skills`, or `~/.pi/agent/skills` unless the user explicitly asks.
@@ -138,7 +133,7 @@ After drafting, verify:
 - [ ] Concrete examples included
 - [ ] References one level deep
 - [ ] If global/repo-managed: skill lives in `~/dev/ai/skills/<skill-name>/`
-- [ ] If global/repo-managed: `~/.agents/skills/<skill-name>` and `~/.pi/agent/skills/<skill-name>` point back to the repo copy
+- [ ] If global/repo-managed: ran `./install.sh` (or `./install.sh all`) so symlinks exist in the target harness skill directories
 - [ ] If global/repo-managed: `skills/find-skills/SKILL.md` includes the skill in the appropriate current-skill/local-custom list
 - [ ] If global/repo-managed and local/custom: `skills/setup-jpb-skills/SKILL.md` preserves the skill during upstream syncs
-- [ ] If global/repo-managed: grep for skill-name lists has been run and any relevant references are updated
+- [ ] If global/repo-managed: grep for skill-name references has been run and any relevant files updated

@@ -1,47 +1,8 @@
 {
   "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_CODE_NO_FLICKER": "1",
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
     "ENABLE_TOOL_SEARCH": "true"
-  },
-  "attribution": {
-    "commit": "",
-    "pr": ""
-  },
-  "enableAllProjectMcpServers": true,
-  "enabledPlugins": {
-    "github@claude-plugins-official": true,
-    "frontend-design@claude-plugins-official": true,
-    "typescript-lsp@claude-plugins-official": true,
-    "pyright-lsp@claude-plugins-official": true,
-    "gopls-lsp@claude-plugins-official": true,
-    "php-lsp@claude-plugins-official": true,
-    "playwright@claude-plugins-official": true,
-    "skill-creator@claude-plugins-official": true,
-    "plugin-dev@claude-plugins-official": true,
-    "notion@claude-plugins-official": true,
-    "commit-commands@claude-plugins-official": true,
-    "code-review@claude-plugins-official": true,
-    "pr-review-toolkit@claude-plugins-official": true,
-    "claude-code-setup@claude-plugins-official": true,
-    "feature-dev@claude-plugins-official": true,
-    "enver@enver-plugins": true,
-    "ouroboros@ouroboros": true
-  },
-  "extraKnownMarketplaces": {
-    "enver-plugins": {
-      "source": {
-        "source": "github",
-        "repo": "EnverVentures/claude-plugins"
-      }
-    },
-    "ouroboros": {
-      "source": {
-        "source": "github",
-        "repo": "Q00/ouroboros"
-      }
-    }
   },
   "effortLevel": "xhigh",
   "autoCompactWindow": 200000,

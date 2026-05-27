@@ -1,4 +1,0 @@
-- Use `just` as task runner when a justfile exists; use `make` when a Makefile exists
-- When told to "think hard", use thorough analysis and consider edge cases
-- After each change, run fast checks (build, lint, typecheck) and fix errors before continuing
-- Run the full test suite only once at the end, when all changes are complete

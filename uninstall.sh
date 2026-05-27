@@ -11,11 +11,6 @@ uninstall_claude() {
     local target="$HOME/.claude"
     echo "  Target: $target"
     unlink_item "$target/skills"
-    unlink_item "$target/agents"
-    unlink_item "$target/hooks"
-    unlink_item "$target/rules"
-    unlink_item "$target/plugins"
-    unlink_item "$target/CLAUDE.md"
     unlink_item "$target/settings.json"
 }
 
@@ -23,8 +18,6 @@ uninstall_forge() {
     local target="$HOME/forge"
     echo "  Target: $target"
     unlink_item "$target/skills"
-    unlink_item "$target/agents"
-    unlink_item "$target/AGENTS.md"
     unlink_item "$target/.forge.toml"
 }
 
@@ -32,8 +25,6 @@ uninstall_opencode() {
     local target="$HOME/.config/opencode"
     echo "  Target: $target"
     unlink_item "$target/skills"
-    unlink_item "$target/agents"
-    unlink_item "$target/AGENTS.md"
     unlink_item "$target/opencode.json"
 }
 
@@ -41,8 +32,6 @@ uninstall_codex() {
     local target="$HOME/.codex"
     echo "  Target: $target"
     unlink_children "$REPO_DIR/skills" "$target/skills"
-    unlink_item "$target/agents"
-    unlink_item "$target/AGENTS.md"
     unlink_item "$target/config.toml"
 }
 
@@ -50,34 +39,17 @@ uninstall_droid() {
     local target="$HOME/.factory"
     echo "  Target: $target"
     unlink_children "$REPO_DIR/skills" "$target/skills"
-    unlink_item "$target/AGENTS.md"
 }
 
 uninstall_pi() {
-    local settings_file="${PI_SETTINGS_FILE:-$HOME/.pi/agent/settings.json}"
-    local package_path="$REPO_DIR/packages/quality-autoresearch"
-    echo "  Settings: $settings_file"
-
-    if [ ! -e "$settings_file" ]; then
-        echo "    SKIP settings.json (not found)"
-        return
-    fi
-
-    SETTINGS_FILE="$settings_file" PACKAGE_PATH="$package_path" python - <<'PY'
-import json
-import os
-from pathlib import Path
-
-settings_path = Path(os.environ["SETTINGS_FILE"])
-package_path = os.environ["PACKAGE_PATH"]
-data = json.loads(settings_path.read_text()) if settings_path.read_text().strip() else {}
-packages = data.get("packages", [])
-if not isinstance(packages, list):
-    raise SystemExit("settings.json field 'packages' exists but is not a list")
-data["packages"] = [pkg for pkg in packages if pkg != package_path]
-settings_path.write_text(json.dumps(data, indent=2) + "\n")
-PY
-    echo "    REMOVED quality-autoresearch package"
+    local target="$HOME/.pi/agent"
+    echo "  Target: $target"
+    unlink_item "$target/skills"
+    unlink_item "$target/settings.json"
+    unlink_item "$target/models.json"
+    unlink_item "$target/keybindings.json"
+    unlink_item "$target/autoresearch.config.json"
+    unlink_item "$target/extensions"
 }
 
 # ─────────────────────────────────────────────────────────────────────────────

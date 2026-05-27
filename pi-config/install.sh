@@ -15,16 +15,11 @@ TOP_LEVEL_FILES=(
   models.json
   keybindings.json
   autoresearch.config.json
-  AGENTS.md
-  SYSTEM.md
-  APPEND_SYSTEM.md
 )
 
 TOP_LEVEL_DIRS=(
   prompts
   skills
-  themes
-  agents
 )
 
 usage() {

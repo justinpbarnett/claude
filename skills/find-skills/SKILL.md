@@ -13,15 +13,9 @@ Canonical skill directory:
 ~/dev/ai/skills
 ```
 
-Compatibility links point back here:
+This repo is the single source of truth. `./install.sh` (or `./install.sh all`) creates the appropriate symlinks inside each AI harness's expected skills location (e.g. `~/.claude/skills`, `~/.pi/agent/skills`, `~/.codex/skills` via per-skill children links, etc.).
 
-```text
-~/.agents/skills/<skill> -> ~/dev/ai/skills/<skill>
-~/.pi/agent/skills/<skill> -> ~/dev/ai/skills/<skill>
-~/.codex/skills/<skill> -> ~/dev/ai/skills/<skill>   (via install.sh codex)
-```
-
-Do **not** install or update skills directly into `~/.agents/skills` or `~/.pi/agent/skills`. If a skill is added or changed, update this repo first, then ensure those global links point back to the repo copy.
+Do **not** manually create or edit skills inside harness directories. Always edit in this repo, then re-run the installer for the affected harness(es).
 
 ## Current Skill Set
 
@@ -37,7 +31,6 @@ Included categories: **engineering** and **productivity** only, except where a l
 
 Current upstream-synced skills:
 
-- `caveman` — ultra-compressed communication mode
 - `diagnose` — disciplined diagnosis/debugging loop
 - `grill-me` — stress-test a plan through questioning
 - `grill-with-docs` — grill a plan and update context/ADR docs
@@ -71,7 +64,7 @@ Use this skill when the user:
 - Asks whether a capability is already installed
 - Wants to add, remove, sync, or audit skills
 - Mentions Matt Pocock's skills, JPB skills, or exact upstream copies
-- Asks about `~/.agents/skills`, `~/.pi/agent/skills`, or repo skill symlinks
+- Asks about repo-managed skills or harness skill installation
 
 ## Discovery Process
 
@@ -101,7 +94,7 @@ Examples:
 - Write a new skill → `write-a-skill`
 - Upstream OSS contribution → `contribute`
 - Broad quality review → `deep-audit`
-- Need brevity → `caveman`
+
 - Make writing sound less AI-generated → `humanize`
 
 ### 3. If no installed skill fits, search upstream
@@ -137,17 +130,13 @@ for category in engineering productivity; do
 done
 ```
 
-Then maintain compatibility links:
+Then ensure harnesses see the updated skills by running the installer:
 
 ```bash
-for path in ~/dev/ai/skills/*; do
-  skill=$(basename "$path")
-  ln -sfn "$HOME/dev/ai/skills/$skill" "$HOME/.agents/skills/$skill"
-  ln -sfn "$HOME/dev/ai/skills/$skill" "$HOME/.pi/agent/skills/$skill"
-done
+cd ~/dev/ai && ./install.sh all
 ```
 
-Remove global links for deleted skills so Pi does not expose stale capabilities.
+This creates the correct symlinks for all supported harnesses (Claude, Pi, Codex, etc.).
 
 ## Important Rules
 
