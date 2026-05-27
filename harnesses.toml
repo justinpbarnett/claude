@@ -2,11 +2,16 @@
 # Defines where each harness expects its config and how to map our unified repo.
 #
 # Source of truth: this repo (~/dev/ai)
-# Install: ./install.sh [harness|all]
+# Install: ./install.sh [harness|all]   (or python install.py)
 # Uninstall: ./uninstall.sh [harness|all]
 #
 # Minimal profile: only skills + tiny per-harness config files are installed.
 # No rules, hooks, agents, plugins, MCP servers, or top-level guidelines files.
+#
+# skills_mode:
+#   "directory" (default) → symlink the whole skills/ folder into the target
+#   "children"            → create individual symlinks for each skill (codex, droid, etc.)
+# skills_name: override the directory name skills appear under (e.g. "skills-cursor" for Cursor)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Claude Code
@@ -14,9 +19,6 @@
 # ─────────────────────────────────────────────────────────────────────────────
 [claude]
 target = "~/.claude"
-supports_hooks = false
-supports_plugins = false
-supports_rules = false
 config_format = "json"
 
 [claude.symlinks]
@@ -29,9 +31,6 @@ skills = "skills"
 # ─────────────────────────────────────────────────────────────────────────────
 [forge]
 target = "~/forge"
-supports_hooks = false
-supports_plugins = false
-supports_rules = false
 config_format = "toml"
 
 [forge.symlinks]
@@ -44,9 +43,6 @@ skills = "skills"
 # ─────────────────────────────────────────────────────────────────────────────
 [opencode]
 target = "~/.config/opencode"
-supports_hooks = false
-supports_plugins = false
-supports_rules = false
 config_format = "jsonc"
 
 [opencode.symlinks]
@@ -59,9 +55,7 @@ skills = "skills"
 # ─────────────────────────────────────────────────────────────────────────────
 [codex]
 target = "~/.codex"
-supports_hooks = false
-supports_plugins = false
-supports_rules = false
+skills_mode = "children"
 config_format = "toml"
 
 [codex.symlinks]
@@ -74,9 +68,7 @@ skills = "skills"
 # ─────────────────────────────────────────────────────────────────────────────
 [droid]
 target = "~/.factory"
-supports_hooks = false
-supports_plugins = false
-supports_rules = false
+skills_mode = "children"
 config_format = "json"
 
 [droid.symlinks]
@@ -88,9 +80,6 @@ skills = "skills"
 # ─────────────────────────────────────────────────────────────────────────────
 [pi]
 target = "~/.pi/agent"
-supports_hooks = false
-supports_plugins = false
-supports_rules = false
 config_format = "json"
 
 [pi.symlinks]
@@ -100,3 +89,30 @@ skills = "skills"
 "keybindings.json" = "pi-config/keybindings.json"
 "autoresearch.config.json" = "pi-config/autoresearch.config.json"
 extensions = "pi-config/extensions"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Cursor
+# Cursor's agent/CLI mode uses a custom skills directory name.
+# Docs: https://cursor.com (CLI + Composer rules)
+# ─────────────────────────────────────────────────────────────────────────────
+[cursor]
+target = "~/.cursor"
+skills_name = "skills-cursor"
+config_format = "json"
+
+[cursor.symlinks]
+"skills-cursor" = "skills"
+# "cli-config.json" = "harness/cursor/cli-config.json"   # add when you want to manage it
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Grok (xAI Grok Build / Grok CLI)
+# Skills live directly under ~/.grok/skills
+# Docs: https://grok.x.ai
+# ─────────────────────────────────────────────────────────────────────────────
+[grok]
+target = "~/.grok"
+config_format = "toml"
+
+[grok.symlinks]
+skills = "skills"
+# "config.toml" = "harness/grok/config.toml"             # add when you want a managed base config
