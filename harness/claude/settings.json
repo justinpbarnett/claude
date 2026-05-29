@@ -4,6 +4,10 @@
     "CLAUDE_CODE_DISABLE_1M_CONTEXT": "1",
     "ENABLE_TOOL_SEARCH": "true"
   },
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
   "effortLevel": "xhigh",
   "autoCompactWindow": 200000,
   "skipDangerousModePermissionPrompt": true,
